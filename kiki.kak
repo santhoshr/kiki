@@ -10,6 +10,7 @@ declare-user-mode kiki
 declare-option str kiki_prefix "$ "
 declare-option str kiki_scratch "~/.config/kak/kiki/scratchpad.kiki"
 declare-option str kiki_topics "~/.config/kak/kiki/"
+declare-option str kiki_buffer_type ""
 
 ##
 # Commands
@@ -32,6 +33,7 @@ Executes a bash command and prints the output in a new fifo buffer" \
         printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
             edit! -fifo ${output} -scroll ${buffer_name}
             set-option buffer filetype bash
+            set-option buffer kiki_buffer_type fifo
             hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
         }"
 }}
@@ -88,6 +90,7 @@ define-command -docstring "kiki-list-topics: list all available topic files" \
             timestamp=$(date +%H%M%S)
             buffer_name="*kiki-topics-${timestamp}*"
             printf 'edit -scratch %s\n' "$buffer_name"
+            printf 'set-option buffer kiki_buffer_type topics\n'
             printf 'execute-keys "i"\n'
             printf 'execute-keys "Available kiki topics:\n\n"\n'
             for file in "$topics_dir"*.kiki; do
@@ -113,7 +116,7 @@ map global kiki C "<esc>I%opt{kiki_prefix}<esc>" -docstring 'Prefix the current 
 # Command execution and manipulation.
 map global kiki y ':kiki-select<ret>y' -docstring 'Select and yank after tab.'
 map global kiki i ':kiki-select<ret>yo<esc>!<c-r>"<ret>' -docstring 'Execute and return inline.'
-map global kiki s ':kiki-select<ret>y<esc>:e -scratch *kiki-scratch*<ret>!<c-r>"<ret>xH!<c-r>.<ret>' -docstring 'Execute and return in scratch buffer.'
+map global kiki s ':kiki-select<ret>y<esc>:e -scratch *kiki-scratch*<ret>:set-option buffer kiki_buffer_type scratch<ret>!<c-r>"<ret>xH!<c-r>.<ret>' -docstring 'Execute and return in scratch buffer.'
 map global kiki f ':kiki-select<ret>yA<esc>:kiki-fifo <c-r>"<ret>' -docstring 'Execute and pipe output to fifo.'
 map global kiki b ':kiki-select<ret>yA<esc>:kiki-background <c-r>"<ret>' -docstring 'Execute in the background.'
 

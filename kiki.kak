@@ -23,8 +23,14 @@ Executes a bash command and prints the output in a new fifo buffer" \
         output=$(mktemp -d "${TMPDIR:-/tmp}"/kak-make.XXXXXXXX)/fifo
         mkfifo ${output}
         ( eval "$@" > ${output} 2>&1 ) > /dev/null 2>&1 < /dev/null &
+        
+        # Create unique buffer name with command and timestamp
+        cmd_name=$(printf '%s' "$1" | tr '/' '-' | tr ' ' '-')
+        timestamp=$(date +%H%M%S)
+        buffer_name="*kiki-fifo-${cmd_name}-${timestamp}*"
+        
         printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
-            edit! -fifo ${output} -scroll *kiki-fifo*
+            edit! -fifo ${output} -scroll ${buffer_name}
             set-option buffer filetype bash
             hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
         }"
@@ -74,6 +80,28 @@ define-command -docstring "kiki-cd: change directory to path from selected text 
         }
     }
 
+# List available topic files.
+define-command -docstring "kiki-list-topics: list all available topic files" \
+    kiki-list-topics %{ evaluate-commands %sh{
+        topics_dir=$(eval echo "$kak_opt_kiki_topics")
+        if [ -d "$topics_dir" ]; then
+            timestamp=$(date +%H%M%S)
+            buffer_name="*kiki-topics-${timestamp}*"
+            printf 'edit -scratch %s\n' "$buffer_name"
+            printf 'execute-keys "i"\n'
+            printf 'execute-keys "Available kiki topics:\n\n"\n'
+            for file in "$topics_dir"*.kiki; do
+                if [ -f "$file" ]; then
+                    basename=$(basename "$file" .kiki)
+                    printf 'execute-keys "%s%s\n"\n' "$kak_opt_kiki_prefix" "$basename"
+                fi
+            done
+            printf 'execute-keys "<esc>"\n'
+        else
+            printf 'echo "Topics directory does not exist: %s"\n' "$topics_dir"
+        fi
+    }}
+
 ##
 # Shortcuts
 # ---------
@@ -96,6 +124,7 @@ map global kiki e ':kiki-uri-select<ret>yA<ret><esc>:e <c-r>"<ret>' -docstring '
 
 # Topics.
 map global kiki t ':kiki-topic<ret>' -docstring ':e topic file with name.'
+map global kiki T ':kiki-list-topics<ret>' -docstring 'List available topic files.'
 
 # Quick actions.
 map global kiki p ':kiki-cd<ret>' -docstring 'Change directory to path.'

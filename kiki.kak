@@ -7,7 +7,7 @@ declare-user-mode kiki
 # Options
 # -------
 
-declare-option str kiki_prefix "kiki "
+declare-option str kiki_prefix "$ "
 declare-option str kiki_scratch "~/.config/kak/kiki/scratchpad.kiki"
 declare-option str kiki_topics "~/.config/kak/kiki/"
 
@@ -40,8 +40,8 @@ define-command -params .. \
 # Selection after prefix.
 define-command -docstring "kiki-select: select all text after kiki" \
     kiki-select %{
-        execute-keys "<esc>xs%opt{kiki_prefix}.+<ret>"
-        execute-keys "s(?<=%opt{kiki_prefix}).+"
+        execute-keys "<esc>xs\$ .+<ret>"
+        execute-keys "s(?<=\$ ).+"
         execute-keys '<ret>H'
 }
 
@@ -88,7 +88,7 @@ map global kiki , ":e %opt{kiki_scratch}<ret>" -docstring 'Open scratchpad.'
 # ------------
 
 add-highlighter global/ regex ^>[^\n]+ 0:green
-add-highlighter global/ regex "%opt{kiki_prefix}" 0:default+rb
-add-highlighter global/ regex \(?<=kiki )[^\n]+ 0:cyan
+add-highlighter global/ regex "\$ " 0:default+rb
+add-highlighter global/ regex "(?<=\$ )[^\n]+" 0:cyan
 # add-highlighter global/ regex ^[\ ]+-[^\n]+ 0:red
 

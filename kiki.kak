@@ -62,6 +62,18 @@ define-command -docstring "kiki-topic: open a topic file with the given name" \
         }
     }
 
+
+# Change directory to path.
+define-command -docstring "kiki-cd: change directory to path from selected text after prefix" \
+    kiki-cd %{
+        kiki-select
+        evaluate-commands %sh{
+            # Expand ~ and relative paths
+            path=$(eval echo "$kak_selection")
+            printf 'change-directory "%s"' "$path"
+        }
+    }
+
 ##
 # Shortcuts
 # ---------
@@ -84,6 +96,9 @@ map global kiki e ':kiki-uri-select<ret>yA<ret><esc>:e <c-r>"<ret>' -docstring '
 
 # Topics.
 map global kiki t ':kiki-topic<ret>' -docstring ':e topic file with name.'
+
+# Quick actions.
+map global kiki p ':kiki-cd<ret>' -docstring 'Change directory to path.'
 
 # Scratchpad.
 map global kiki , ":e %opt{kiki_scratch}<ret>" -docstring 'Open scratchpad.'

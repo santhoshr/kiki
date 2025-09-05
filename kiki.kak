@@ -10,7 +10,7 @@ declare-user-mode kiki
 declare-option str kiki_prefix "$ "
 declare-option str kiki_scratch "~/.config/kak/kiki/scratchpad.kiki"
 declare-option str kiki_topics "~/.config/kak/kiki/"
-declare-option str kiki_buffer_type ""
+declare-option -buffer str kiki_buffer_type ""
 
 ##
 # Commands

@@ -54,8 +54,13 @@ define-command -docstring "kiki-uri-select: select a uri on the current line" \
 # Open topic file.
 define-command -docstring "kiki-topic: open a topic file with the given name" \
     kiki-topic %{
-        execute-keys ":kiki-select<ret>:e %opt{kiki_topics}<c-r>..kiki<ret>"
-}
+        execute-keys "<esc>xs\$ \S+<ret>s\S+<ret>"
+        evaluate-commands %sh{
+            # Get only the first word after the prefix and extract basename if it's a path
+            topic_name=$(basename "$kak_selection")
+            printf 'edit "%s%s.kiki"' "$kak_opt_kiki_topics" "$topic_name"
+        }
+    }
 
 ##
 # Shortcuts

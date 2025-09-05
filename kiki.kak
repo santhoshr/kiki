@@ -2,6 +2,7 @@
 #   Alexander Maricich 2019
 
 declare-user-mode kiki
+declare-user-mode kiki-delete
 
 ##
 # Options
@@ -36,7 +37,7 @@ Executes a bash command and prints the output in a new fifo buffer" \
             set-option buffer kiki_buffer_type fifo
             echo -debug \"KIKI: Set buffer type to fifo for ${buffer_name}\"
             echo -debug \"KIKI: Current buffer type: %opt{kiki_buffer_type}\"
-            set-option window modelinefmt \"%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} %{cyan}[kiki:fifo]%{default} {{mode_info}} - %val{client}@[%val{session}]\"
+            try %{ set-option window modelinefmt \"%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} %{cyan}[kiki:fifo]%{default} {{mode_info}} - %val{client}@[%val{session}]\" }
             hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
         }"
 }}
@@ -96,7 +97,7 @@ define-command -docstring "kiki-list-topics: list all available topic files" \
             printf 'set-option buffer kiki_buffer_type topics\n'
             printf 'echo -debug "KIKI: Set buffer type to topics for %s"\n' "$buffer_name"
             printf 'echo -debug "KIKI: Current buffer type: %%opt{kiki_buffer_type}"\n'
-            printf 'set-option window modelinefmt "%%val{bufname} %%val{cursor_line}:%%val{cursor_char_column} {{context_info}} %%{cyan}[kiki:topics]%%{default} {{mode_info}} - %%val{client}@[%%val{session}]"\n'
+            printf 'try %%{ set-option window modelinefmt "%%val{bufname} %%val{cursor_line}:%%val{cursor_char_column} {{context_info}} %%{cyan}[kiki:topics]%%{default} {{mode_info}} - %%val{client}@[%%val{session}]" %%}\n'
             printf 'execute-keys "i"\n'
             printf 'execute-keys "Available kiki topics:\n\n"\n'
             for file in "$topics_dir"*.kiki; do
@@ -109,6 +110,62 @@ define-command -docstring "kiki-list-topics: list all available topic files" \
         else
             printf 'echo "Topics directory does not exist: %s"\n' "$topics_dir"
         fi
+    }}
+
+# Close all kiki buffers.
+define-command -docstring "kiki-close-all-buffers: close all kiki-managed buffers" \
+    kiki-close-all-buffers %{ evaluate-commands %sh{
+        for buffer in $kak_buflist; do
+            printf 'evaluate-commands -buffer "%s" %%{
+                evaluate-commands %%sh{
+                    if [ -n "$kak_opt_kiki_buffer_type" ]; then
+                        printf "delete-buffer %s" "%s"
+                    fi
+                }
+            }\n' "$buffer" "$buffer"
+        done
+    }}
+
+# Close fifo buffers.
+define-command -docstring "kiki-close-fifo-buffers: close all kiki fifo buffers" \
+    kiki-close-fifo-buffers %{ evaluate-commands %sh{
+        for buffer in $kak_buflist; do
+            printf 'evaluate-commands -buffer "%s" %%{
+                evaluate-commands %%sh{
+                    if [ "$kak_opt_kiki_buffer_type" = "fifo" ]; then
+                        printf "delete-buffer %s" "%s"
+                    fi
+                }
+            }\n' "$buffer" "$buffer"
+        done
+    }}
+
+# Close topics buffers.
+define-command -docstring "kiki-close-topics-buffers: close all kiki topics buffers" \
+    kiki-close-topics-buffers %{ evaluate-commands %sh{
+        for buffer in $kak_buflist; do
+            printf 'evaluate-commands -buffer "%s" %%{
+                evaluate-commands %%sh{
+                    if [ "$kak_opt_kiki_buffer_type" = "topics" ]; then
+                        printf "delete-buffer %s" "%s"
+                    fi
+                }
+            }\n' "$buffer" "$buffer"
+        done
+    }}
+
+# Close kiki file buffers.
+define-command -docstring "kiki-close-file-buffers: close all kiki file buffers" \
+    kiki-close-file-buffers %{ evaluate-commands %sh{
+        for buffer in $kak_buflist; do
+            printf 'evaluate-commands -buffer "%s" %%{
+                evaluate-commands %%sh{
+                    if [ "$kak_opt_kiki_buffer_type" = "file" ]; then
+                        printf "delete-buffer %s" "%s"
+                    fi
+                }
+            }\n' "$buffer" "$buffer"
+        done
     }}
 
 ##
@@ -140,6 +197,15 @@ map global kiki p ':kiki-cd<ret>' -docstring 'Change directory to path.'
 
 # Scratchpad.
 map global kiki , ":e %opt{kiki_scratch}<ret>" -docstring 'Open scratchpad.'
+
+# Delete menu.
+map global kiki d ':enter-user-mode kiki-delete<ret>' -docstring 'Delete/close kiki buffers menu.'
+
+# Delete submenu mappings.
+map global kiki-delete a ':kiki-close-all-buffers<ret>' -docstring 'Close all kiki buffers.'
+map global kiki-delete f ':kiki-close-fifo-buffers<ret>' -docstring 'Close fifo buffers.'
+map global kiki-delete t ':kiki-close-topics-buffers<ret>' -docstring 'Close topics buffers.'
+map global kiki-delete k ':kiki-close-file-buffers<ret>' -docstring 'Close kiki file buffers.'
 
 ##
 # Highlighters

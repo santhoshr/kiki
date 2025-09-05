@@ -10,7 +10,7 @@ declare-user-mode kiki
 declare-option str kiki_prefix "$ "
 declare-option str kiki_scratch "~/.config/kak/kiki/scratchpad.kiki"
 declare-option str kiki_topics "~/.config/kak/kiki/"
-declare-option -buffer str kiki_buffer_type ""
+declare-option str kiki_buffer_type ""
 
 ##
 # Commands
@@ -34,6 +34,9 @@ Executes a bash command and prints the output in a new fifo buffer" \
             edit! -fifo ${output} -scroll ${buffer_name}
             set-option buffer filetype bash
             set-option buffer kiki_buffer_type fifo
+            echo -debug \"KIKI: Set buffer type to fifo for ${buffer_name}\"
+            echo -debug \"KIKI: Current buffer type: %opt{kiki_buffer_type}\"
+            set-option window modelinefmt \"%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} %{cyan}[kiki:fifo]%{default} {{mode_info}} - %val{client}@[%val{session}]\"
             hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
         }"
 }}
@@ -91,6 +94,9 @@ define-command -docstring "kiki-list-topics: list all available topic files" \
             buffer_name="*kiki-topics-${timestamp}*"
             printf 'edit -scratch %s\n' "$buffer_name"
             printf 'set-option buffer kiki_buffer_type topics\n'
+            printf 'echo -debug "KIKI: Set buffer type to topics for %s"\n' "$buffer_name"
+            printf 'echo -debug "KIKI: Current buffer type: %%opt{kiki_buffer_type}"\n'
+            printf 'set-option window modelinefmt "%%val{bufname} %%val{cursor_line}:%%val{cursor_char_column} {{context_info}} %%{cyan}[kiki:topics]%%{default} {{mode_info}} - %%val{client}@[%%val{session}]"\n'
             printf 'execute-keys "i"\n'
             printf 'execute-keys "Available kiki topics:\n\n"\n'
             for file in "$topics_dir"*.kiki; do

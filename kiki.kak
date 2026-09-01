@@ -1,19 +1,21 @@
 # Kiki
 #   Alexander Maricich 2019
 
-declare-user-mode kiki
-declare-user-mode kiki-delete
+##
+# User modes
+# ----------
+try %{ declare-user-mode kiki }
+try %{ declare-user-mode kiki-delete }
 
 ##
 # Options
 # -------
-
 declare-option str kiki_prefix "$ "
 declare-option -docstring "Directory containing kiki topic files" str kiki_topics "~/.config/kak/kiki/"
 declare-option str kiki_buffer_type ""
 
 # Set buffer type for .kiki files
-hook global BufOpenFile .*\.kiki$ %{
+hook -group kiki global BufOpenFile .*\.kiki$ %{
     set-option buffer kiki_buffer_type file
 }
 
@@ -22,19 +24,19 @@ hook global BufOpenFile .*\.kiki$ %{
 # --------
 
 # Pipe to fifo.
-define-command -params .. \
+define-command -override -params .. \
     -docstring "kiki-fifo [<arguments>]: execute bash command to fifo
 Executes a bash command and prints the output in a new fifo buffer" \
     kiki-fifo %{ evaluate-commands %sh{
         output=$(mktemp -d "${TMPDIR:-/tmp}"/kak-make.XXXXXXXX)/fifo
         mkfifo ${output}
         ( eval "$@" > ${output} 2>&1 ) > /dev/null 2>&1 < /dev/null &
-        
+
         # Create unique buffer name with command and timestamp
         cmd_name=$(printf '%s' "$1" | tr '/' '-' | tr ' ' '-')
         timestamp=$(date +%H%M%S)
         buffer_name="*kiki-fifo-${cmd_name}-${timestamp}*"
-        
+
         printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
             edit! -fifo ${output} -scroll ${buffer_name}
             set-option buffer filetype bash
@@ -45,14 +47,18 @@ Executes a bash command and prints the output in a new fifo buffer" \
 }}
 
 # Background execution.
-define-command -params .. \
+define-command -override -params .. \
     -docstring "kiki-background [<arguments>]: execute bash command in the background" \
     kiki-background %{ evaluate-commands %sh{
-        ( eval "$@" > ${output} 2>&1 ) > /dev/null 2>&1 < /dev/null
+        ( eval "$@" ) > /dev/null 2>&1 < /dev/null &
+        pid=$!
+        escaped_cmd=$(printf '%s' "$*" | sed "s/'/''/g")
+        printf "echo -debug 'KIKI: Background command started [PID %s]: %s'\n" "$pid" "$escaped_cmd"
+        printf "echo 'kiki: started background job [PID %s]: %s'\n" "$pid" "$escaped_cmd"
 }}
 
 # Selection after prefix.
-define-command -docstring "kiki-select: select all text after kiki" \
+define-command -override -docstring "kiki-select: select all text after kiki" \
     kiki-select %{
         execute-keys "<esc>xs\$ .+<ret>"
         execute-keys "s(?<=\$ ).+"
@@ -60,36 +66,111 @@ define-command -docstring "kiki-select: select all text after kiki" \
 }
 
 # Select URI.
-define-command -docstring "kiki-uri-select: select a uri on the current line" \
+define-command -override -docstring "kiki-uri-select: select a uri on the current line" \
     kiki-uri-select %{
         execute-keys "<esc>xs(~/|\./|/)[^\s]+\b<ret>"
 }
 
 # Open topic file.
-define-command -docstring "kiki-topic: open a topic file with the given name" \
+define-command -override -params 0..1 \
+    -docstring "kiki-topic [<name>]: open a topic file with the given name" \
     kiki-topic %{
-        execute-keys "<esc>xs\$ \S+<ret>s\S+<ret>"
         evaluate-commands %sh{
-            # Get only the first word after the prefix and extract basename if it's a path
-            topic_name=$(basename "$kak_selection")
-            printf 'edit "%s%s.kiki"' "$kak_opt_kiki_topics" "$topic_name"
+            # 1. Explicit argument provided
+            if [ $# -ge 1 ]; then
+                printf 'kiki-topic-do %%{%s}\n' "$1"
+                exit 0
+            fi
+            # 2. Active multi-character selection
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-topic-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            # 3. No selection: select line and pass to kiki-topic-do
+            printf 'evaluate-commands %%{
+                execute-keys "<esc>x"
+                kiki-topic-do %%val{selection}
+            }\n'
         }
     }
+
+define-command -override -hidden -params 1 \
+    kiki-topic-do %{ evaluate-commands %sh{
+        raw="$1"
+        topic_raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*\$[[:space:]]*//' -e 's/^[[:space:]]*//' | awk '{print $1}')
+        topic_name=$(basename "$topic_raw" .kiki)
+        if [ -n "$topic_name" ] && [ "$topic_name" != "$" ]; then
+            printf 'execute-keys %%{;}\n'
+            printf 'edit "%s%s.kiki"\n' "$kak_opt_kiki_topics" "$topic_name"
+        else
+            printf 'execute-keys %%{;}\n'
+            printf 'echo -markup "{Error}kiki-topic: no topic name found on line"\n'
+        fi
+    }}
 
 
 # Change directory to path.
-define-command -docstring "kiki-cd: change directory to path from selected text after prefix" \
+define-command -override -params 0..1 \
+    -docstring "kiki-cd [<path>]: change directory to path from argument, selected text, or line with prefix/URI" \
     kiki-cd %{
-        kiki-select
         evaluate-commands %sh{
-            # Expand ~ and relative paths
-            path=$(eval echo "$kak_selection")
-            printf 'change-directory "%s"' "$path"
+            # 1. Explicit argument provided
+            if [ $# -ge 1 ]; then
+                printf 'kiki-cd-do %%{%s}\n' "$1"
+                exit 0
+            fi
+            # 2. Active multi-character selection
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-cd-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            # 3. No selection: select line and pass to kiki-cd-do
+            printf 'evaluate-commands %%{
+                execute-keys "<esc>x"
+                kiki-cd-do %%val{selection}
+            }\n'
         }
     }
 
+define-command -override -hidden -params 1 \
+    kiki-cd-do %{ evaluate-commands %sh{
+        raw="$1"
+        # Strip leading/trailing whitespace and optional $ prefix
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        raw="${raw#\$ }"
+        raw="${raw#\$}"
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        # Expand ~
+        case "$raw" in
+            "~"/*) path="${HOME}/${raw#"~"/}" ;;
+            "~") path="${HOME}" ;;
+            *) path="$raw" ;;
+        esac
+
+        if [ -z "$path" ]; then
+            printf 'echo -markup "{Error}kiki-cd: no path found on line"\n'
+            exit 0
+        fi
+
+        printf 'execute-keys %%{;}\n'
+
+        if [ -d "$path" ]; then
+            printf 'change-directory %%{%s}\n' "$path"
+            printf 'echo "kiki: changed directory to %s"\n' "$path"
+        elif [ -f "$path" ]; then
+            dir=$(dirname "$path")
+            printf 'change-directory %%{%s}\n' "$dir"
+            printf 'echo "kiki: changed directory to %s"\n' "$dir"
+        else
+            printf 'change-directory %%{%s}\n' "$path"
+        fi
+    }}
+
 # List available topic files.
-define-command -docstring "kiki-list-topics: list all available topic files" \
+define-command -override -docstring "kiki-list-topics: list all available topic files" \
     kiki-list-topics %{ evaluate-commands %sh{
         topics_dir=$(eval echo "$kak_opt_kiki_topics")
         if [ -d "$topics_dir" ]; then
@@ -113,7 +194,7 @@ define-command -docstring "kiki-list-topics: list all available topic files" \
     }}
 
 # Close all kiki buffers.
-define-command -docstring "kiki-close-all-buffers: close all kiki-managed buffers" \
+define-command -override -docstring "kiki-close-all-buffers: close all kiki-managed buffers" \
     kiki-close-all-buffers %{ evaluate-commands %sh{
         for buffer in $kak_buflist; do
             printf 'evaluate-commands -buffer "%s" %%{
@@ -127,7 +208,7 @@ define-command -docstring "kiki-close-all-buffers: close all kiki-managed buffer
     }}
 
 # Close fifo buffers.
-define-command -docstring "kiki-close-fifo-buffers: close all kiki fifo buffers" \
+define-command -override -docstring "kiki-close-fifo-buffers: close all kiki fifo buffers" \
     kiki-close-fifo-buffers %{ evaluate-commands %sh{
         for buffer in $kak_buflist; do
             printf 'evaluate-commands -buffer "%s" %%{
@@ -141,7 +222,7 @@ define-command -docstring "kiki-close-fifo-buffers: close all kiki fifo buffers"
     }}
 
 # Close topics buffers.
-define-command -docstring "kiki-close-topics-buffers: close all kiki topics buffers" \
+define-command -override -docstring "kiki-close-topics-buffers: close all kiki topics buffers" \
     kiki-close-topics-buffers %{ evaluate-commands %sh{
         for buffer in $kak_buflist; do
             printf 'evaluate-commands -buffer "%s" %%{
@@ -155,7 +236,7 @@ define-command -docstring "kiki-close-topics-buffers: close all kiki topics buff
     }}
 
 # Close kiki file buffers.
-define-command -docstring "kiki-close-file-buffers: close all kiki file buffers" \
+define-command -override -docstring "kiki-close-file-buffers: close all kiki file buffers" \
     kiki-close-file-buffers %{ evaluate-commands %sh{
         for buffer in $kak_buflist; do
             printf 'evaluate-commands -buffer "%s" %%{
@@ -211,8 +292,7 @@ map global kiki-delete k ':kiki-close-file-buffers<ret>' -docstring 'Close kiki 
 # Highlighters
 # ------------
 
-add-highlighter global/ regex ^>[^\n]+ 0:green
-add-highlighter global/ regex "\$ " 0:default+rb
-add-highlighter global/ regex "(?<=\$ )[^\n]+" 0:cyan
-# add-highlighter global/ regex ^[\ ]+-[^\n]+ 0:red
-
+try %{ add-highlighter -override global/kiki_arrow regex ^>[^\n]+ 0:green }
+try %{ add-highlighter -override global/kiki_dollar regex "\$ " 0:default+rb }
+try %{ add-highlighter -override global/kiki_cmd regex "(?<=\$ )[^\n]+" 0:cyan }
+# try %{ add-highlighter -override global/kiki_dash regex ^[\ ]+-[^\n]+ 0:red }

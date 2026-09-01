@@ -23,17 +23,166 @@ hook -group kiki global BufOpenFile .*\.kiki$ %{
 # Commands
 # --------
 
+# Execute command and return inline below current line.
+define-command -override -params .. \
+    -docstring "kiki-inline [<arguments>]: execute bash command and insert output below current line" \
+    kiki-inline %{
+        evaluate-commands %sh{
+            # 1. Explicit argument provided
+            if [ $# -ge 1 ]; then
+                printf 'kiki-inline-do %%{%s}\n' "$*"
+                exit 0
+            fi
+            # 2. Active multi-character selection
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-inline-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            # 3. No selection: extract command after prefix on current line
+            printf 'try %%{
+                kiki-select
+                kiki-inline-do %%val{selection}
+            } catch %%{
+                evaluate-commands %%{
+                    execute-keys "<esc>x"
+                    kiki-inline-do %%val{selection}
+                }
+            }\n'
+        }
+    }
+
+define-command -override -hidden -params 1 \
+    kiki-inline-do %{ evaluate-commands %sh{
+        cmd="$1"
+        # Strip leading/trailing whitespace and optional $ prefix
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        cmd="${cmd#\$ }"
+        cmd="${cmd#\$}"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        if [ -z "$cmd" ]; then
+            printf 'echo -markup "{Error}kiki-inline: no command specified"\n'
+            exit 0
+        fi
+
+        tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-inline.XXXXXXXX)
+        ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+
+        if [ -s "$tmp_out" ]; then
+            start_line="$kak_cursor_line"
+            first_line=$(( start_line + 1 ))
+            num_lines=$(wc -l < "$tmp_out")
+            [ "$num_lines" -eq 0 ] && num_lines=1
+            last_line=$(( first_line + num_lines - 1 ))
+
+            printf 'execute-keys %%{o<esc>!cat %s<ret>}\n' "$tmp_out"
+            printf 'select %s.1,%s.99999999\n' "$first_line" "$last_line"
+        fi
+        printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
+    }}
+
+
+# Execute command and return in scratch buffer.
+define-command -override -params .. \
+    -docstring "kiki-scratch [<arguments>]: execute bash command and return output in scratch buffer" \
+    kiki-scratch %{
+        evaluate-commands %sh{
+            # 1. Explicit argument provided
+            if [ $# -ge 1 ]; then
+                printf 'kiki-scratch-do %%{%s}\n' "$*"
+                exit 0
+            fi
+            # 2. Active multi-character selection
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-scratch-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            # 3. No selection: extract command after prefix on current line
+            printf 'try %%{
+                kiki-select
+                kiki-scratch-do %%val{selection}
+            } catch %%{
+                evaluate-commands %%{
+                    execute-keys "<esc>x"
+                    kiki-scratch-do %%val{selection}
+                }
+            }\n'
+        }
+    }
+
+define-command -override -hidden -params 1 \
+    kiki-scratch-do %{ evaluate-commands %sh{
+        cmd="$1"
+        # Strip leading/trailing whitespace and optional $ prefix
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        cmd="${cmd#\$ }"
+        cmd="${cmd#\$}"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        if [ -z "$cmd" ]; then
+            printf 'echo -markup "{Error}kiki-scratch: no command specified"\n'
+            exit 0
+        fi
+
+        tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-scratch.XXXXXXXX)
+        ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+
+        printf 'edit -scratch *kiki-scratch*\n'
+        printf 'set-option buffer filetype bash\n'
+        printf 'set-option buffer kiki_buffer_type scratch\n'
+        printf 'try %%{ set-option window modelinefmt "%%val{bufname} %%val{cursor_line}:%%val{cursor_char_column} {{context_info}} %%{cyan}[kiki:scratch]%%{default} {{mode_info}} - %%val{client}@[%%val{session}]" %%}\n'
+        printf 'execute-keys -draft %%{<percent>d!cat "%s"<ret>}\n' "$tmp_out"
+        printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
+    }}
+
+
 # Pipe to fifo.
 define-command -override -params .. \
     -docstring "kiki-fifo [<arguments>]: execute bash command to fifo
 Executes a bash command and prints the output in a new fifo buffer" \
-    kiki-fifo %{ evaluate-commands %sh{
-        output=$(mktemp -d "${TMPDIR:-/tmp}"/kak-make.XXXXXXXX)/fifo
-        mkfifo ${output}
-        ( eval "$@" > ${output} 2>&1 ) > /dev/null 2>&1 < /dev/null &
+    kiki-fifo %{
+        evaluate-commands %sh{
+            if [ $# -ge 1 ]; then
+                printf 'kiki-fifo-do %%{%s}\n' "$*"
+                exit 0
+            fi
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-fifo-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            printf 'try %%{
+                kiki-select
+                kiki-fifo-do %%val{selection}
+            } catch %%{
+                evaluate-commands %%{
+                    execute-keys "<esc>x"
+                    kiki-fifo-do %%val{selection}
+                }
+            }\n'
+        }
+    }
 
-        # Create unique buffer name with command and timestamp
-        cmd_name=$(printf '%s' "$1" | tr '/' '-' | tr ' ' '-')
+define-command -override -hidden -params 1 \
+    kiki-fifo-do %{ evaluate-commands %sh{
+        cmd="$1"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        cmd="${cmd#\$ }"
+        cmd="${cmd#\$}"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        if [ -z "$cmd" ]; then
+            printf 'echo -markup "{Error}kiki-fifo: no command specified"\n'
+            exit 0
+        fi
+
+        output=$(mktemp -d "${TMPDIR:-/tmp}"/kak-make.XXXXXXXX)/fifo
+        mkfifo "${output}"
+        ( eval "$cmd" > "${output}" 2>&1 ) > /dev/null 2>&1 < /dev/null &
+
+        cmd_name=$(printf '%s' "$cmd" | awk '{print $1}' | tr '/' '-' | tr ' ' '-')
         timestamp=$(date +%H%M%S)
         buffer_name="*kiki-fifo-${cmd_name}-${timestamp}*"
 
@@ -44,18 +193,54 @@ Executes a bash command and prints the output in a new fifo buffer" \
             try %{ set-option window modelinefmt \"%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} %{cyan}[kiki:fifo]%{default} {{mode_info}} - %val{client}@[%val{session}]\" }
             hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
         }"
-}}
+    }}
+
 
 # Background execution.
 define-command -override -params .. \
     -docstring "kiki-background [<arguments>]: execute bash command in the background" \
-    kiki-background %{ evaluate-commands %sh{
-        ( eval "$@" ) > /dev/null 2>&1 < /dev/null &
+    kiki-background %{
+        evaluate-commands %sh{
+            if [ $# -ge 1 ]; then
+                printf 'kiki-background-do %%{%s}\n' "$*"
+                exit 0
+            fi
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-background-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            printf 'try %%{
+                kiki-select
+                kiki-background-do %%val{selection}
+            } catch %%{
+                evaluate-commands %%{
+                    execute-keys "<esc>x"
+                    kiki-background-do %%val{selection}
+                }
+            }\n'
+        }
+    }
+
+define-command -override -hidden -params 1 \
+    kiki-background-do %{ evaluate-commands %sh{
+        cmd="$1"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        cmd="${cmd#\$ }"
+        cmd="${cmd#\$}"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        if [ -z "$cmd" ]; then
+            printf 'echo -markup "{Error}kiki-background: no command specified"\n'
+            exit 0
+        fi
+
+        ( eval "$cmd" ) > /dev/null 2>&1 < /dev/null &
         pid=$!
-        escaped_cmd=$(printf '%s' "$*" | sed "s/'/''/g")
+        escaped_cmd=$(printf '%s' "$cmd" | sed "s/'/''/g")
         printf "echo -debug 'KIKI: Background command started [PID %s]: %s'\n" "$pid" "$escaped_cmd"
         printf "echo 'kiki: started background job [PID %s]: %s'\n" "$pid" "$escaped_cmd"
-}}
+    }}
 
 # Selection after prefix.
 define-command -override -docstring "kiki-select: select all text after kiki" \
@@ -408,10 +593,10 @@ map global kiki <a-c> "<esc>o%opt{kiki_prefix}<esc>:comment-line<ret><esc>k<a-j>
 
 # Command execution and manipulation.
 map global kiki y ':kiki-select<ret>y' -docstring 'Select and yank after tab.'
-map global kiki i ':kiki-select<ret>yo<esc>!<c-r>"<ret>' -docstring 'Execute and return inline.'
-map global kiki s ':kiki-select<ret>y<esc>:e -scratch *kiki-scratch*<ret>:set-option buffer kiki_buffer_type scratch<ret>!<c-r>"<ret>xH!<c-r>.<ret>' -docstring 'Execute and return in scratch buffer.'
-map global kiki f ':kiki-select<ret>yA<esc>:kiki-fifo <c-r>"<ret>' -docstring 'Execute and pipe output to fifo.'
-map global kiki b ':kiki-select<ret>yA<esc>:kiki-background <c-r>"<ret>' -docstring 'Execute in the background.'
+map global kiki i ':kiki-inline<ret>' -docstring 'Execute and return inline.'
+map global kiki s ':kiki-scratch<ret>' -docstring 'Execute and return in scratch buffer.'
+map global kiki f ':kiki-fifo<ret>' -docstring 'Execute and pipe output to fifo.'
+map global kiki b ':kiki-background<ret>' -docstring 'Execute in the background.'
 
 # File system navigation.
 map global kiki Y ':kiki-uri-select<ret>y' -docstring 'Select and yank URI.'

@@ -23,7 +23,20 @@ hook -group kiki global BufOpenFile .*\.kiki$ %{
 # Commands
 # --------
 
-# # Sudo check and password prompt helper.
+# Sudo authentication callback.
+define-command -override -hidden -params 2 \
+    kiki-sudo-auth-and-run %{ evaluate-commands %sh{
+        action="$1"
+        cmd="$2"
+        printf '%s\n' "$kak_text" | sudo -S -v -p "" >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            printf '%s %%{%s}\n' "$action" "$cmd"
+        else
+            printf 'echo -markup "{Error}kiki: incorrect sudo password"\n'
+        fi
+    }}
+
+# Sudo check and password prompt helper.
 define-command -override -hidden -params 2 \
     kiki-check-sudo %{ evaluate-commands %sh{
         action="$1"
@@ -31,18 +44,7 @@ define-command -override -hidden -params 2 \
         # Check if command contains sudo
         if printf '%s\n' "$cmd" | grep -Eq '(^|[;&|[:space:]])sudo([[:space:]]|$)'; then
             if ! sudo -n true >/dev/null 2>&1; then
-                escaped_action=$(printf '%s' "$action" | sed "s/'/''/g")
-                escaped_cmd=$(printf '%s' "$cmd" | sed "s/'/''/g")
-                printf 'prompt -password "Password:" %%{
-                    evaluate-commands %%sh{
-                        printf "%%s\n" "$kak_text" | sudo -S -v -p "" >/dev/null 2>&1
-                        if [ $? -eq 0 ]; then
-                            printf "%s %%{%s}\n" "'"$escaped_action"'" "'"$escaped_cmd"'"
-                        else
-                            printf "echo -markup \"{Error}kiki: incorrect sudo password\"\n"
-                        fi
-                    }
-                }\n'
+                printf 'prompt -password "Password:" %%{ kiki-sudo-auth-and-run %%{%s} %%{%s} }\n' "$action" "$cmd"
                 exit 0
             fi
         fi
@@ -266,6 +268,65 @@ define-command -override -hidden -params 1 \
         escaped_cmd=$(printf '%s' "$cmd" | sed "s/'/''/g")
         printf "echo -debug 'KIKI: Background command started [PID %s]: %s'\n" "$pid" "$escaped_cmd"
         printf "echo 'kiki: started background job [PID %s]: %s'\n" "$pid" "$escaped_cmd"
+    }}
+
+
+# Terminal shell execution.
+define-command -override -params .. \
+    -docstring "kiki-shell [<arguments>]: execute bash command in terminal shell with current directory" \
+    kiki-shell %{
+        evaluate-commands %sh{
+            if [ $# -ge 1 ]; then
+                printf 'kiki-check-sudo kiki-shell-do %%{%s}\n' "$*"
+                exit 0
+            fi
+            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            if [ "${#trimmed_sel}" -gt 1 ]; then
+                printf 'kiki-check-sudo kiki-shell-do %%{%s}\n' "$trimmed_sel"
+                exit 0
+            fi
+            printf 'try %%{
+                kiki-select
+                kiki-check-sudo kiki-shell-do %%val{selection}
+            } catch %%{
+                evaluate-commands %%{
+                    execute-keys "<esc>x"
+                    kiki-check-sudo kiki-shell-do %%val{selection}
+                }
+            }\n'
+        }
+    }
+
+define-command -override -hidden -params 1 \
+    kiki-shell-do %{ evaluate-commands %sh{
+        cmd="$1"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        cmd="${cmd#\$ }"
+        cmd="${cmd#\$}"
+        cmd=$(printf '%s\n' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        tmp_script=$(mktemp "${TMPDIR:-/tmp}"/kiki-shell.XXXXXXXX)
+        chmod +x "$tmp_script"
+
+        if [ -z "$cmd" ]; then
+            cat << EOF > "$tmp_script"
+#!/bin/sh
+trap 'rm -f "\$0"' EXIT
+cd "$PWD" || exit 1
+exec "\${SHELL:-sh}"
+EOF
+        else
+            cat << EOF > "$tmp_script"
+#!/bin/sh
+trap 'rm -f "\$0"' EXIT
+cd "$PWD" || exit 1
+$cmd
+printf "\n[Process exited. Press Enter to continue]\n"
+read -r _ </dev/tty
+EOF
+        fi
+
+        printf 'terminal "%s"\n' "$tmp_script"
     }}
 
 # Selection after prefix.
@@ -555,56 +616,52 @@ define-command -override -docstring "kiki-list-topics: list all available topic 
 # Close all kiki buffers.
 define-command -override -docstring "kiki-close-all-buffers: close all kiki-managed buffers" \
     kiki-close-all-buffers %{ evaluate-commands %sh{
-        for buffer in $kak_buflist; do
-            printf 'evaluate-commands -buffer "%s" %%{
+        eval "set -- $kak_quoted_buflist"
+        for buffer do
+            printf 'try %%{ evaluate-commands -buffer "%s" %%{
                 evaluate-commands %%sh{
-                    if [ -n "$kak_opt_kiki_buffer_type" ]; then
-                        printf "delete-buffer %s" "%s"
-                    fi
+                    [ -n "$kak_opt_kiki_buffer_type" ] && printf "delete-buffer\n"
                 }
-            }\n' "$buffer" "$buffer"
+            } }\n' "$buffer"
         done
     }}
 
 # Close fifo buffers.
 define-command -override -docstring "kiki-close-fifo-buffers: close all kiki fifo buffers" \
     kiki-close-fifo-buffers %{ evaluate-commands %sh{
-        for buffer in $kak_buflist; do
-            printf 'evaluate-commands -buffer "%s" %%{
+        eval "set -- $kak_quoted_buflist"
+        for buffer do
+            printf 'try %%{ evaluate-commands -buffer "%s" %%{
                 evaluate-commands %%sh{
-                    if [ "$kak_opt_kiki_buffer_type" = "fifo" ]; then
-                        printf "delete-buffer %s" "%s"
-                    fi
+                    [ "$kak_opt_kiki_buffer_type" = "fifo" ] && printf "delete-buffer\n"
                 }
-            }\n' "$buffer" "$buffer"
+            } }\n' "$buffer"
         done
     }}
 
 # Close topics buffers.
 define-command -override -docstring "kiki-close-topics-buffers: close all kiki topics buffers" \
     kiki-close-topics-buffers %{ evaluate-commands %sh{
-        for buffer in $kak_buflist; do
-            printf 'evaluate-commands -buffer "%s" %%{
+        eval "set -- $kak_quoted_buflist"
+        for buffer do
+            printf 'try %%{ evaluate-commands -buffer "%s" %%{
                 evaluate-commands %%sh{
-                    if [ "$kak_opt_kiki_buffer_type" = "topics" ]; then
-                        printf "delete-buffer %s" "%s"
-                    fi
+                    [ "$kak_opt_kiki_buffer_type" = "topics" ] && printf "delete-buffer\n"
                 }
-            }\n' "$buffer" "$buffer"
+            } }\n' "$buffer"
         done
     }}
 
 # Close kiki file buffers.
 define-command -override -docstring "kiki-close-file-buffers: close all kiki file buffers" \
     kiki-close-file-buffers %{ evaluate-commands %sh{
-        for buffer in $kak_buflist; do
-            printf 'evaluate-commands -buffer "%s" %%{
+        eval "set -- $kak_quoted_buflist"
+        for buffer do
+            printf 'try %%{ evaluate-commands -buffer "%s" %%{
                 evaluate-commands %%sh{
-                    if [ "$kak_opt_kiki_buffer_type" = "file" ]; then
-                        printf "delete-buffer %s" "%s"
-                    fi
+                    [ "$kak_opt_kiki_buffer_type" = "file" ] && printf "delete-buffer\n"
                 }
-            }\n' "$buffer" "$buffer"
+            } }\n' "$buffer"
         done
     }}
 
@@ -623,6 +680,8 @@ map global kiki i ':kiki-inline<ret>' -docstring 'Execute and return inline.'
 map global kiki s ':kiki-scratch<ret>' -docstring 'Execute and return in scratch buffer.'
 map global kiki f ':kiki-fifo<ret>' -docstring 'Execute and pipe output to fifo.'
 map global kiki b ':kiki-background<ret>' -docstring 'Execute in the background.'
+map global kiki '!' ':kiki-shell<ret>' -docstring 'Execute in terminal shell.'
+map global kiki o ':kiki-shell<ret>' -docstring 'Execute in terminal shell.'
 
 # File system navigation.
 map global kiki Y ':kiki-uri-select<ret>y' -docstring 'Select and yank URI.'

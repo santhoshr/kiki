@@ -23,6 +23,32 @@ hook -group kiki global BufOpenFile .*\.kiki$ %{
 # Commands
 # --------
 
+# # Sudo check and password prompt helper.
+define-command -override -hidden -params 2 \
+    kiki-check-sudo %{ evaluate-commands %sh{
+        action="$1"
+        cmd="$2"
+        # Check if command contains sudo
+        if printf '%s\n' "$cmd" | grep -Eq '(^|[;&|[:space:]])sudo([[:space:]]|$)'; then
+            if ! sudo -n true >/dev/null 2>&1; then
+                escaped_action=$(printf '%s' "$action" | sed "s/'/''/g")
+                escaped_cmd=$(printf '%s' "$cmd" | sed "s/'/''/g")
+                printf 'prompt -password "Password:" %%{
+                    evaluate-commands %%sh{
+                        printf "%%s\n" "$kak_text" | sudo -S -v -p "" >/dev/null 2>&1
+                        if [ $? -eq 0 ]; then
+                            printf "%s %%{%s}\n" "'"$escaped_action"'" "'"$escaped_cmd"'"
+                        else
+                            printf "echo -markup \"{Error}kiki: incorrect sudo password\"\n"
+                        fi
+                    }
+                }\n'
+                exit 0
+            fi
+        fi
+        printf '%s %%{%s}\n' "$action" "$cmd"
+    }}
+
 # Execute command and return inline below current line.
 define-command -override -params .. \
     -docstring "kiki-inline [<arguments>]: execute bash command and insert output below current line" \
@@ -30,23 +56,23 @@ define-command -override -params .. \
         evaluate-commands %sh{
             # 1. Explicit argument provided
             if [ $# -ge 1 ]; then
-                printf 'kiki-inline-do %%{%s}\n' "$*"
+                printf 'kiki-check-sudo kiki-inline-do %%{%s}\n' "$*"
                 exit 0
             fi
             # 2. Active multi-character selection
             trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
             if [ "${#trimmed_sel}" -gt 1 ]; then
-                printf 'kiki-inline-do %%{%s}\n' "$trimmed_sel"
+                printf 'kiki-check-sudo kiki-inline-do %%{%s}\n' "$trimmed_sel"
                 exit 0
             fi
             # 3. No selection: extract command after prefix on current line
             printf 'try %%{
                 kiki-select
-                kiki-inline-do %%val{selection}
+                kiki-check-sudo kiki-inline-do %%val{selection}
             } catch %%{
                 evaluate-commands %%{
                     execute-keys "<esc>x"
-                    kiki-inline-do %%val{selection}
+                    kiki-check-sudo kiki-inline-do %%val{selection}
                 }
             }\n'
         }
@@ -90,23 +116,23 @@ define-command -override -params .. \
         evaluate-commands %sh{
             # 1. Explicit argument provided
             if [ $# -ge 1 ]; then
-                printf 'kiki-scratch-do %%{%s}\n' "$*"
+                printf 'kiki-check-sudo kiki-scratch-do %%{%s}\n' "$*"
                 exit 0
             fi
             # 2. Active multi-character selection
             trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
             if [ "${#trimmed_sel}" -gt 1 ]; then
-                printf 'kiki-scratch-do %%{%s}\n' "$trimmed_sel"
+                printf 'kiki-check-sudo kiki-scratch-do %%{%s}\n' "$trimmed_sel"
                 exit 0
             fi
             # 3. No selection: extract command after prefix on current line
             printf 'try %%{
                 kiki-select
-                kiki-scratch-do %%val{selection}
+                kiki-check-sudo kiki-scratch-do %%val{selection}
             } catch %%{
                 evaluate-commands %%{
                     execute-keys "<esc>x"
-                    kiki-scratch-do %%val{selection}
+                    kiki-check-sudo kiki-scratch-do %%val{selection}
                 }
             }\n'
         }
@@ -145,21 +171,21 @@ Executes a bash command and prints the output in a new fifo buffer" \
     kiki-fifo %{
         evaluate-commands %sh{
             if [ $# -ge 1 ]; then
-                printf 'kiki-fifo-do %%{%s}\n' "$*"
+                printf 'kiki-check-sudo kiki-fifo-do %%{%s}\n' "$*"
                 exit 0
             fi
             trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
             if [ "${#trimmed_sel}" -gt 1 ]; then
-                printf 'kiki-fifo-do %%{%s}\n' "$trimmed_sel"
+                printf 'kiki-check-sudo kiki-fifo-do %%{%s}\n' "$trimmed_sel"
                 exit 0
             fi
             printf 'try %%{
                 kiki-select
-                kiki-fifo-do %%val{selection}
+                kiki-check-sudo kiki-fifo-do %%val{selection}
             } catch %%{
                 evaluate-commands %%{
                     execute-keys "<esc>x"
-                    kiki-fifo-do %%val{selection}
+                    kiki-check-sudo kiki-fifo-do %%val{selection}
                 }
             }\n'
         }
@@ -202,21 +228,21 @@ define-command -override -params .. \
     kiki-background %{
         evaluate-commands %sh{
             if [ $# -ge 1 ]; then
-                printf 'kiki-background-do %%{%s}\n' "$*"
+                printf 'kiki-check-sudo kiki-background-do %%{%s}\n' "$*"
                 exit 0
             fi
             trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
             if [ "${#trimmed_sel}" -gt 1 ]; then
-                printf 'kiki-background-do %%{%s}\n' "$trimmed_sel"
+                printf 'kiki-check-sudo kiki-background-do %%{%s}\n' "$trimmed_sel"
                 exit 0
             fi
             printf 'try %%{
                 kiki-select
-                kiki-background-do %%val{selection}
+                kiki-check-sudo kiki-background-do %%val{selection}
             } catch %%{
                 evaluate-commands %%{
                     execute-keys "<esc>x"
-                    kiki-background-do %%val{selection}
+                    kiki-check-sudo kiki-background-do %%val{selection}
                 }
             }\n'
         }

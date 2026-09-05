@@ -41,6 +41,12 @@ define-command -override -docstring "kiki-close-topics-buffers: close all kiki t
         kiki-close-buffers-matching topics
     }
 
+# Close file tree buffers
+define-command -override -docstring "kiki-close-tree-buffers: close all kiki file tree buffers" \
+    kiki-close-tree-buffers %{
+        kiki-close-buffers-matching tree
+    }
+
 # Close kiki file buffers
 define-command -override -docstring "kiki-close-file-buffers: close all kiki file buffers" \
     kiki-close-file-buffers %{

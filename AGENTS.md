@@ -72,6 +72,13 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - Resolves relative paths, absolute paths, and tilde `~`.
 - **Topic Fallback:** If the file does not exist in CWD, automatically checks `$kak_opt_kiki_topics/<name>.kiki`.
 
+### E. Interactive Multi-Root File Tree (`rc/tree.kak`)
+- **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
+- **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` or `<c-o>`.
+- **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
+- **Arbitrary Path Exploration:** Users can type or paste any path (e.g. `~/.config/kak/` or `/var/log/`) on a new line and press `<ret>` to expand it alongside existing trees.
+- **Keybindings:** `<ret>` / `<c-o>` (toggle/open), `<tab>` (step-into folder / open file), `<c-l>` (move to parent folder), `r` (refresh node in-place), `.` (toggle hidden dotfiles), `q` (delete buffer).
+
 ---
 
 ## 4. Complete Command & Mapping Reference
@@ -92,6 +99,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `Y` | `kiki-uri-select`| Select and yank URI / path on line |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor/selection |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topic files) |
+| `o` | `kiki-file-tree` | Open interactive collapsible file tree |
 | `t` | `kiki-topic` | Open topic file by name (`<topic>.kiki`) |
 | `T` | `kiki-list-topics` | List available topic files in a scratch buffer |
 | `p` | `kiki-cd` | Change Kakoune working directory to path |
@@ -105,6 +113,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `a` | `kiki-close-all-buffers` | Close all Kiki-managed buffers |
 | `f` | `kiki-close-fifo-buffers` | Close all `*kiki-fifo-*` buffers |
 | `t` | `kiki-close-topics-buffers` | Close all `*kiki-topics-*` buffers |
+| `r` | `kiki-close-tree-buffers` | Close all `*kiki-file-tree*` buffers |
 | `k` | `kiki-close-file-buffers` | Close all open `.kiki` file buffers |
 
 ---
@@ -114,7 +123,8 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 ```kak
 declare-option str kiki_prefix "$ "                      # Command prefix string
 declare-option str kiki_topics "~/.config/kak/kiki/"     # Topic files directory
-declare-option str kiki_buffer_type ""                   # Buffer category (file|fifo|scratch|topics)
+declare-option str kiki_buffer_type ""                   # Buffer category (file|fifo|scratch|topics|tree)
+declare-option bool kiki_tree_show_hidden false          # Show/hide dotfiles in file tree
 ```
 
 ---

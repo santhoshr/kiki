@@ -20,9 +20,11 @@ for getting things done.
  - Allows the creation and storage of persistant topic files that can be used
    to store generic information.
  - Access to a persistant scratchpad that can be opened with a simple shortcut.
-
-**Future planned functionality:**
- - Full file system navigation through a tree like structure.
+ - **Interactive File Tree (`kiki-file-tree` / `<o>`):**
+   - Full collapsible/expandable directory tree navigation.
+   - Expand (`+ ` $\rightarrow$ `- `) and collapse subdirectories inline.
+   - Open files directly into editor buffers.
+   - Toggle dotfiles (`h`) and refresh view (`r`).
 
 ## Installing the plugin:
 To install the plugin, link the file to kakoune's autoload directory:

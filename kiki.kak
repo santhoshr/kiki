@@ -45,6 +45,7 @@ map global kiki '!' ':kiki-shell<ret>' -docstring 'Execute in terminal shell.'
 map global kiki Y ':kiki-uri-select<ret>y' -docstring 'Select and yank URI.'
 map global kiki l ':kiki-ls<ret>' -docstring 'ls -al on path.'
 map global kiki e ':kiki-edit<ret>' -docstring 'Open file at path.'
+map global kiki o ':kiki-file-tree<ret>' -docstring 'Open file tree for directory.'
 
 # Topics
 map global kiki t ':kiki-topic<ret>' -docstring ':e topic file with name.'
@@ -63,4 +64,5 @@ map global kiki d ':enter-user-mode kiki-delete<ret>' -docstring 'Delete/close k
 map global kiki-delete a ':kiki-close-all-buffers<ret>' -docstring 'Close all kiki buffers.'
 map global kiki-delete f ':kiki-close-fifo-buffers<ret>' -docstring 'Close fifo buffers.'
 map global kiki-delete t ':kiki-close-topics-buffers<ret>' -docstring 'Close topics buffers.'
+map global kiki-delete r ':kiki-close-tree-buffers<ret>' -docstring 'Close file tree buffers.'
 map global kiki-delete k ':kiki-close-file-buffers<ret>' -docstring 'Close kiki file buffers.'

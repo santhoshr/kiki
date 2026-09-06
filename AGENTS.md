@@ -104,6 +104,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `T` | `kiki-list-topics` | List available topic files in a scratch buffer |
 | `p` | `kiki-cd` | Change Kakoune working directory to path |
 | `D` | `kiki-drop-to-shell` | Suspend Kakoune and drop to shell in selected directory |
+| `q` | `kiki-scratchpad` | Open disposable quick scratchpad (`*kiki-scratchpad-<timestamp>*`) |
 | `,` | — | Open quick scratchpad (`scratchpad.kiki`) |
 | `d` | — | Enter `kiki-delete` buffer cleanup menu |
 
@@ -115,6 +116,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `f` | `kiki-close-fifo-buffers` | Close all `*kiki-fifo-*` buffers |
 | `t` | `kiki-close-topics-buffers` | Close all `*kiki-topics-*` buffers |
 | `r` | `kiki-close-tree-buffers` | Close all `*kiki-file-tree*` buffers |
+| `s` | `kiki-close-scratchpad-buffers` | Close all `*kiki-scratchpad-*` buffers |
 | `k` | `kiki-close-file-buffers` | Close all open `.kiki` file buffers |
 
 ---

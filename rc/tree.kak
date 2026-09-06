@@ -13,15 +13,28 @@ hook -group kiki global BufOpenFile .*\.kikitree$ %{
     set-option buffer filetype kiki-tree
 }
 
+hook -group kiki global BufSetOption filetype=kiki-tree %{
+    set-option buffer kiki_buffer_type tree
+    map buffer normal <ret> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
+    map buffer normal <c-o> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
+    map buffer normal <tab> ':kiki-tree-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
+    map buffer normal <c-l> ':kiki-tree-parent<ret>' -docstring 'Move to parent folder'
+    map buffer normal r ':kiki-tree-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
+    map buffer normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
+    map buffer normal <minus> ':kiki-tree-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
+    map buffer normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
+    map buffer normal q ':delete-buffer<ret>' -docstring 'Close tree view'
+}
+
 hook -group kiki global WinSetOption filetype=kiki-tree %{
     kiki-set-modeline tree
-    # Normal mode actions inside tree buffer
     map window normal <ret> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
     map window normal <c-o> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
     map window normal <tab> ':kiki-tree-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
     map window normal <c-l> ':kiki-tree-parent<ret>' -docstring 'Move to parent folder'
     map window normal r ':kiki-tree-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
     map window normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
+    map window normal <minus> ':kiki-tree-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map window normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
     map window normal q ':delete-buffer<ret>' -docstring 'Close tree view'
 }
@@ -117,9 +130,85 @@ define-command -override -hidden -params 1 \
         home_dir="$HOME"
 
         awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
-        function count_indent(str,    m) { match(str, /^[ ]*/); return RLENGTH }
-        function clean_name(str) { sub(/^[ ]*(\+ |- )/, "", str); sub(/\/$/, "", str); return str }
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
         function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+
+            if (t_indent == 0) return expand_tilde(clean_t)
+
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_tilde(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = full_p "/" path_arr[i]
+            }
+            return full_p
+        }
 
         BEGIN {
             total = 0
@@ -135,53 +224,33 @@ define-command -override -hidden -params 1 \
             }
 
             t_line = lines[cur]
-            t_indent = count_indent(t_line)
-            clean_t = clean_name(t_line)
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
 
-            if (clean_t == "" || t_line ~ /^[ ]*#/) {
+            if (clean_t == "" || t_line ~ /^[ \t]*#/) {
                 system("rm -f \"" tmp_file "\"")
                 exit
             }
 
-            if (t_indent == 0) {
-                full_p = expand_tilde(clean_t)
-            } else {
-                path_count = 1
-                path_arr[path_count] = clean_t
-                req_indent = t_indent
-                for (i = cur - 1; i >= 1; i--) {
-                    ind = count_indent(lines[i])
-                    if (ind < req_indent && lines[i] !~ /^[ ]*#/) {
-                        path_count++
-                        path_arr[path_count] = clean_name(lines[i])
-                        req_indent = ind
-                        if (ind == 0) break
-                    }
-                }
-                root_path = expand_tilde(path_arr[path_count])
-                full_p = root_path
-                for (i = path_count - 1; i >= 1; i--) {
-                    full_p = full_p "/" path_arr[i]
-                }
-            }
+            full_p = resolve_full_path(lines, cur)
 
             check_d = "test -d \"" full_p "\" && echo 'DIR' || (test -f \"" full_p "\" && echo 'FILE' || echo 'NONE')"
             check_d | getline node_type
             close(check_d)
 
             # If node does not end with / and is not an existing directory, open it as a file
-            if (node_type != "DIR" && t_line !~ /\/$/) {
+            if (node_type != "DIR" && t_line !~ /\/[ \t]*$/) {
                 printf "edit %%{%s}\n", full_p
                 system("rm -f \"" tmp_file "\"")
                 exit
             }
 
-            has_children = (cur < total && count_indent(lines[cur + 1]) > t_indent)
+            has_children = (cur < total && get_indent(lines[cur + 1]) > t_indent)
             is_expanded = 0
 
-            if (t_line ~ /^[ ]*- /) {
+            if (t_line ~ /^[ \t]*- /) {
                 is_expanded = 1
-            } else if (t_line ~ /^[ ]*\+ /) {
+            } else if (t_line ~ /^[ \t]*\+ /) {
                 is_expanded = 0
             } else if (has_children) {
                 is_expanded = 1
@@ -194,7 +263,7 @@ define-command -override -hidden -params 1 \
             if (is_expanded) {
                 # Collapse
                 end_idx = cur + 1
-                while (end_idx <= total && count_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ ]*#/) {
+                while (end_idx <= total && get_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ \t]*#/) {
                     end_idx++
                 }
 
@@ -284,9 +353,85 @@ define-command -override -hidden -params 1 \
         home_dir="$HOME"
 
         awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
-        function count_indent(str,    m) { match(str, /^[ ]*/); return RLENGTH }
-        function clean_name(str) { sub(/^[ ]*(\+ |- )/, "", str); sub(/\/$/, "", str); return str }
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
         function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+
+            if (t_indent == 0) return expand_tilde(clean_t)
+
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_tilde(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = full_p "/" path_arr[i]
+            }
+            return full_p
+        }
 
         BEGIN {
             total = 0
@@ -302,42 +447,22 @@ define-command -override -hidden -params 1 \
             }
 
             t_line = lines[cur]
-            t_indent = count_indent(t_line)
-            clean_t = clean_name(t_line)
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
 
-            if (clean_t == "" || t_line ~ /^[ ]*#/) {
+            if (clean_t == "" || t_line ~ /^[ \t]*#/) {
                 system("rm -f \"" tmp_file "\"")
                 exit
             }
 
-            if (t_indent == 0) {
-                full_p = expand_tilde(clean_t)
-            } else {
-                path_count = 1
-                path_arr[path_count] = clean_t
-                req_indent = t_indent
-                for (i = cur - 1; i >= 1; i--) {
-                    ind = count_indent(lines[i])
-                    if (ind < req_indent && lines[i] !~ /^[ ]*#/) {
-                        path_count++
-                        path_arr[path_count] = clean_name(lines[i])
-                        req_indent = ind
-                        if (ind == 0) break
-                    }
-                }
-                root_path = expand_tilde(path_arr[path_count])
-                full_p = root_path
-                for (i = path_count - 1; i >= 1; i--) {
-                    full_p = full_p "/" path_arr[i]
-                }
-            }
+            full_p = resolve_full_path(lines, cur)
 
             check_d = "test -d \"" full_p "\" && echo 'DIR' || (test -f \"" full_p "\" && echo 'FILE' || echo 'NONE')"
             check_d | getline node_type
             close(check_d)
 
             # If node does not end with / and is not an existing directory, open it as a file
-            if (node_type != "DIR" && t_line !~ /\/$/) {
+            if (node_type != "DIR" && t_line !~ /\/[ \t]*$/) {
                 printf "edit %%{%s}\n", full_p
                 system("rm -f \"" tmp_file "\"")
                 exit
@@ -351,7 +476,7 @@ define-command -override -hidden -params 1 \
             root_idx = cur
             if (t_indent > 0) {
                 for (i = cur - 1; i >= 1; i--) {
-                    if (count_indent(lines[i]) == 0 && lines[i] !~ /^[ ]*#/) {
+                    if (get_indent(lines[i]) == 0 && lines[i] !~ /^[ \t]*#/) {
                         root_idx = i
                         break
                     }
@@ -360,7 +485,7 @@ define-command -override -hidden -params 1 \
 
             # Find the end of this root tree branch
             tree_end_idx = root_idx + 1
-            while (tree_end_idx <= total && count_indent(lines[tree_end_idx]) > 0 && lines[tree_end_idx] !~ /^[ ]*#/) {
+            while (tree_end_idx <= total && get_indent(lines[tree_end_idx]) > 0 && lines[tree_end_idx] !~ /^[ \t]*#/) {
                 tree_end_idx++
             }
 
@@ -424,9 +549,85 @@ define-command -override -hidden -params 1 \
         home_dir="$HOME"
 
         awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
-        function count_indent(str,    m) { match(str, /^[ ]*/); return RLENGTH }
-        function clean_name(str) { sub(/^[ ]*(\+ |- )/, "", str); sub(/\/$/, "", str); return str }
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
         function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+
+            if (t_indent == 0) return expand_tilde(clean_t)
+
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_tilde(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = full_p "/" path_arr[i]
+            }
+            return full_p
+        }
 
         BEGIN {
             total = 0
@@ -443,48 +644,28 @@ define-command -override -hidden -params 1 \
 
             # Find closest directory at or above current line
             target_idx = cur
-            while (target_idx >= 1 && lines[target_idx] ~ /^[ ]*#/ && count_indent(lines[target_idx]) > 0) {
+            while (target_idx >= 1 && lines[target_idx] ~ /^[ \t]*#/ && get_indent(lines[target_idx]) > 0) {
                 target_idx--
             }
 
             t_line = lines[target_idx]
-            t_indent = count_indent(t_line)
-            clean_t = clean_name(t_line)
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
 
             # If on file, walk up to its parent directory
-            if (t_line !~ /\/$/ && target_idx > 1) {
+            if (t_line !~ /\/[ \t]*$/ && target_idx > 1) {
                 for (i = target_idx - 1; i >= 1; i--) {
-                    if (count_indent(lines[i]) < t_indent && lines[i] ~ /\/$/) {
+                    if (get_indent(lines[i]) < t_indent && lines[i] ~ /\/[ \t]*$/) {
                         target_idx = i
                         t_line = lines[target_idx]
-                        t_indent = count_indent(t_line)
-                        clean_t = clean_name(t_line)
+                        t_indent = get_indent(t_line)
+                        clean_t = get_clean_name(t_line)
                         break
                     }
                 }
             }
 
-            if (t_indent == 0) {
-                full_p = expand_tilde(clean_t)
-            } else {
-                path_count = 1
-                path_arr[path_count] = clean_t
-                req_indent = t_indent
-                for (i = target_idx - 1; i >= 1; i--) {
-                    ind = count_indent(lines[i])
-                    if (ind < req_indent && lines[i] !~ /^[ ]*#/) {
-                        path_count++
-                        path_arr[path_count] = clean_name(lines[i])
-                        req_indent = ind
-                        if (ind == 0) break
-                    }
-                }
-                root_path = expand_tilde(path_arr[path_count])
-                full_p = root_path
-                for (i = path_count - 1; i >= 1; i--) {
-                    full_p = full_p "/" path_arr[i]
-                }
-            }
+            full_p = resolve_full_path(lines, target_idx)
 
             # Check if directory exists
             check_d = "test -d \"" full_p "\" && echo 1 || echo 0"
@@ -497,7 +678,7 @@ define-command -override -hidden -params 1 \
             }
 
             # If node is currently collapsed, do nothing or expand it
-            is_collapsed = (t_line ~ /^[ ]*\+ /)
+            is_collapsed = (t_line ~ /^[ \t]*\+ /)
             if (is_collapsed) {
                 system("rm -f \"" tmp_file "\"")
                 exit
@@ -505,7 +686,7 @@ define-command -override -hidden -params 1 \
 
             # Find child lines to replace
             end_idx = target_idx + 1
-            while (end_idx <= total && count_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ ]*#/) {
+            while (end_idx <= total && get_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ \t]*#/) {
                 end_idx++
             }
 
@@ -582,9 +763,85 @@ define-command -override -hidden -params 1 \
         home_dir="$HOME"
 
         awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
-        function count_indent(str,    m) { match(str, /^[ ]*/); return RLENGTH }
-        function clean_name(str) { sub(/^[ ]*(\+ |- )/, "", str); sub(/\/$/, "", str); return str }
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
         function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+
+            if (t_indent == 0) return expand_tilde(clean_t)
+
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_tilde(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = full_p "/" path_arr[i]
+            }
+            return full_p
+        }
 
         function expand_dir_rec(dir_path, ind_level,    cmd_d, cmd_f, e, base, d_cnt, f_cnt, d_arr, f_arr, d_i, f_i, child_indent, sp) {
             child_indent = ""
@@ -640,48 +897,28 @@ define-command -override -hidden -params 1 \
 
             # Find target directory at or above current line if on comment/file
             target_idx = cur
-            while (target_idx >= 1 && lines[target_idx] ~ /^[ ]*#/ && count_indent(lines[target_idx]) > 0) {
+            while (target_idx >= 1 && lines[target_idx] ~ /^[ \t]*#/ && get_indent(lines[target_idx]) > 0) {
                 target_idx--
             }
 
             t_line = lines[target_idx]
-            t_indent = count_indent(t_line)
-            clean_t = clean_name(t_line)
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
 
             # If on file, walk up to its parent directory
-            if (t_line !~ /\/$/ && target_idx > 1) {
+            if (t_line !~ /\/[ \t]*$/ && target_idx > 1) {
                 for (i = target_idx - 1; i >= 1; i--) {
-                    if (count_indent(lines[i]) < t_indent && lines[i] ~ /\/$/) {
+                    if (get_indent(lines[i]) < t_indent && lines[i] ~ /\/[ \t]*$/) {
                         target_idx = i
                         t_line = lines[target_idx]
-                        t_indent = count_indent(t_line)
-                        clean_t = clean_name(t_line)
+                        t_indent = get_indent(t_line)
+                        clean_t = get_clean_name(t_line)
                         break
                     }
                 }
             }
 
-            if (t_indent == 0) {
-                full_p = expand_tilde(clean_t)
-            } else {
-                path_count = 1
-                path_arr[path_count] = clean_t
-                req_indent = t_indent
-                for (i = target_idx - 1; i >= 1; i--) {
-                    ind = count_indent(lines[i])
-                    if (ind < req_indent && lines[i] !~ /^[ ]*#/) {
-                        path_count++
-                        path_arr[path_count] = clean_name(lines[i])
-                        req_indent = ind
-                        if (ind == 0) break
-                    }
-                }
-                root_path = expand_tilde(path_arr[path_count])
-                full_p = root_path
-                for (i = path_count - 1; i >= 1; i--) {
-                    full_p = full_p "/" path_arr[i]
-                }
-            }
+            full_p = resolve_full_path(lines, target_idx)
 
             # Check if directory exists
             check_d = "test -d \"" full_p "\" && echo 1 || echo 0"
@@ -695,7 +932,7 @@ define-command -override -hidden -params 1 \
 
             # Find existing child lines to replace
             end_idx = target_idx + 1
-            while (end_idx <= total && count_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ ]*#/) {
+            while (end_idx <= total && get_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ \t]*#/) {
                 end_idx++
             }
 
@@ -739,8 +976,56 @@ define-command -override -hidden -params 1 \
         home_dir="$HOME"
 
         awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
-        function count_indent(str,    m) { match(str, /^[ ]*/); return RLENGTH }
-        function clean_name(str) { sub(/^[ ]*(\+ |- )/, "", str); sub(/\/$/, "", str); return str }
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
         function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
 
         BEGIN {
@@ -758,10 +1043,10 @@ define-command -override -hidden -params 1 \
 
             # Find root header of this tree branch
             root_idx = cur
-            t_indent = count_indent(lines[cur])
+            t_indent = get_indent(lines[cur])
             if (t_indent > 0) {
                 for (i = cur - 1; i >= 1; i--) {
-                    if (count_indent(lines[i]) == 0 && lines[i] !~ /^[ ]*#/) {
+                    if (get_indent(lines[i]) == 0 && lines[i] !~ /^[ \t]*#/) {
                         root_idx = i
                         break
                     }
@@ -769,8 +1054,8 @@ define-command -override -hidden -params 1 \
             }
 
             root_line = lines[root_idx]
-            clean_root = clean_name(root_line)
-            if (clean_root == "" || root_line ~ /^[ ]*#/) {
+            clean_root = get_clean_name(root_line)
+            if (clean_root == "" || root_line ~ /^[ \t]*#/) {
                 system("rm -f \"" tmp_file "\"")
                 exit
             }
@@ -793,7 +1078,7 @@ define-command -override -hidden -params 1 \
             parent_p_display = parent_p "/"
 
             tree_end_idx = root_idx + 1
-            while (tree_end_idx <= total && count_indent(lines[tree_end_idx]) > 0 && lines[tree_end_idx] !~ /^[ ]*#/) {
+            while (tree_end_idx <= total && get_indent(lines[tree_end_idx]) > 0 && lines[tree_end_idx] !~ /^[ \t]*#/) {
                 tree_end_idx++
             }
 
@@ -836,6 +1121,275 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", root_idx, root_idx
+            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+        }'
+    }}
+
+# Multi-selection level narrowing (-)
+# 1st step: remove subtrees without selections
+# 2nd step: remove siblings without selections
+define-command -override -hidden \
+    kiki-tree-narrow %{ evaluate-commands %sh{
+        tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        printf 'write -force "%s"\n' "$tmp_file"
+        printf 'kiki-tree-narrow-do "%s"\n' "$tmp_file"
+    }}
+
+define-command -override -hidden -params 1 \
+    kiki-tree-narrow-do %{ evaluate-commands %sh{
+        tmp_file="$1"
+        cur="$kak_cursor_line"
+        selections_desc="$kak_selections_desc"
+        hidden="$kak_opt_kiki_tree_show_hidden"
+        home_dir="$HOME"
+
+        awk -v cur="$cur" -v sel_desc="$selections_desc" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
+        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        BEGIN {
+            total = 0
+            while ((getline line < tmp_file) > 0) {
+                total++
+                lines[total] = line
+                indents[total] = get_indent(line)
+            }
+            close(tmp_file)
+
+            if (total == 0) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            # Parse selected lines from selections_desc (handles spaces and colons: "1.1,1.5 4.1,4.10" or "1.1,1.5:4.1,4.10")
+            n_sels = split(sel_desc, sel_chunks, /[ :]+/)
+            has_explicit_sel = 0
+            for (s = 1; s <= n_sels; s++) {
+                if (sel_chunks[s] == "") continue
+                split(sel_chunks[s], coords, ",")
+                split(coords[1], start_c, ".")
+                split(coords[2], end_c, ".")
+                sl = start_c[1] + 0
+                el = end_c[1] + 0
+                if (sl > el) { tmp_l = sl; sl = el; el = tmp_l }
+                for (l = sl; l <= el; l++) {
+                    if (l >= 1 && l <= total) {
+                        is_selected[l] = 1
+                        has_explicit_sel = 1
+                    }
+                }
+            }
+
+            if (!has_explicit_sel && cur >= 1 && cur <= total) {
+                is_selected[cur] = 1
+            }
+
+            # Find root and parent index for each line in the buffer
+            # Indent 0 lines that are not comments represent tree roots
+            curr_root = 0
+            for (i = 1; i <= total; i++) {
+                parent[i] = 0
+                root_of[i] = 0
+                if (lines[i] ~ /^[ ]*#/) continue
+
+                if (indents[i] == 0) {
+                    curr_root = i
+                    root_of[i] = i
+                } else {
+                    root_of[i] = curr_root
+                    for (j = i - 1; j >= 1; j--) {
+                        if (indents[j] < indents[i] && lines[j] !~ /^[ ]*#/) {
+                            parent[i] = j
+                            break
+                        }
+                    }
+                }
+            }
+
+            # Find which roots contain active selections
+            for (i = 1; i <= total; i++) {
+                if (is_selected[i] && root_of[i] > 0) {
+                    root_has_sel[root_of[i]] = 1
+                }
+            }
+
+            # If a directory node is selected (e.g. from filtering with %<a-s><a-k>),
+            # treat all its nested children as selected/kept
+            for (i = 1; i <= total; i++) {
+                if (is_selected[i] && lines[i] ~ /\/$/) {
+                    for (j = i + 1; j <= total && indents[j] > indents[i]; j++) {
+                        if (lines[j] !~ /^[ ]*#/) {
+                            is_selected[j] = 1
+                        }
+                    }
+                }
+            }
+
+            # Calculate has_sel for each node and propagate upwards to parents
+            for (i = 1; i <= total; i++) {
+                has_sel[i] = (is_selected[i] ? 1 : 0)
+            }
+            for (i = total; i >= 1; i--) {
+                p = parent[i]
+                if (p > 0 && has_sel[i]) has_sel[p] = 1
+            }
+
+            # Step 1 check within selected roots:
+            # Unselected subtrees (folders with no selections) or unselected direct children under the root
+            has_step1_removals = 0
+            for (i = 1; i <= total; i++) {
+                r = root_of[i]
+                if (r > 0 && root_has_sel[r] && indents[i] > 0 && !has_sel[i]) {
+                    p = parent[i]
+                    if (lines[i] ~ /\/$/ || (p > 0 && lines[p] ~ /\/$/ && indents[p] == 0)) {
+                        has_step1_removals = 1
+                        break
+                    }
+                }
+            }
+
+            out_tmp = tmp_file ".out"
+
+            # Determine the target root to keep/narrow:
+            # If multiple roots have selections, pick the first selected root or cursor root
+            target_root = 0
+            if (cur >= 1 && cur <= total && root_of[cur] > 0 && root_has_sel[root_of[cur]]) {
+                target_root = root_of[cur]
+            } else {
+                for (i = 1; i <= total; i++) {
+                    if (root_has_sel[i]) {
+                        target_root = i
+                        break
+                    }
+                }
+            }
+            if (target_root == 0 && cur >= 1 && cur <= total) {
+                target_root = root_of[cur]
+            }
+
+            if (has_step1_removals) {
+                # Stage 1: Remove unselected subtrees (folders with no selections) and unselected direct children
+                # Only within target_root
+                for (i = 1; i <= total; i++) {
+                    if (root_of[i] == target_root && indents[i] > 0 && !has_sel[i]) {
+                        p = parent[i]
+                        if (lines[i] ~ /\/$/ || (p > 0 && lines[p] ~ /\/$/ && indents[p] == 0)) {
+                            remove_stage1[i] = 1
+                        }
+                    }
+                }
+                for (i = 1; i <= total; i++) {
+                    p = parent[i]
+                    if (p > 0 && remove_stage1[p]) remove_stage1[i] = 1
+                }
+
+                out_count = 0
+                for (i = 1; i <= total; i++) {
+                    # Only keep lines belonging to target_root, discarding other trees
+                    if (root_of[i] == target_root && !remove_stage1[i]) {
+                        out_count++
+                        out_lines[out_count] = lines[i]
+                        if (is_selected[i]) new_sel[out_count] = 1
+                    }
+                }
+            } else {
+                # Stage 2: Remove unselected inner siblings within the selected directories of target_root
+                for (i = 1; i <= total; i++) {
+                    if (root_of[i] == target_root && is_selected[i]) {
+                        keep[i] = 1
+                        # Mark all ancestors
+                        p = parent[i]
+                        while (p > 0) {
+                            keep[p] = 1
+                            p = parent[p]
+                        }
+                        # If selected item is an expanded directory, keep all its descendants
+                        if (lines[i] ~ /^[ ]*- / && lines[i] ~ /\/$/) {
+                            for (j = i + 1; j <= total && indents[j] > indents[i]; j++) {
+                                keep[j] = 1
+                            }
+                        }
+                    }
+                }
+
+                out_count = 0
+                for (i = 1; i <= total; i++) {
+                    # Only keep lines belonging to target_root, discarding other trees
+                    if (root_of[i] == target_root && (lines[i] ~ /^[ ]*#/ || keep[i])) {
+                        out_count++
+                        out_lines[out_count] = lines[i]
+                        if (is_selected[i]) new_sel[out_count] = 1
+                    }
+                }
+            }
+
+            for (i = 1; i <= out_count; i++) {
+                print out_lines[i] > out_tmp
+            }
+            close(out_tmp)
+
+            # Build selection desc for Kakoune to restore selections on active items
+            new_sel_desc = ""
+            for (i = 1; i <= out_count; i++) {
+                if (new_sel[i]) {
+                    chunk = i ".1," i ".1"
+                    if (new_sel_desc == "") new_sel_desc = chunk
+                    else new_sel_desc = new_sel_desc " " chunk
+                }
+            }
+            if (new_sel_desc == "") new_sel_desc = "1.1,1.1"
+
+            printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
+            printf "select %s\n", new_sel_desc
             printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
         }'
     }}

@@ -77,7 +77,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` or `<c-o>`.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Arbitrary Path Exploration:** Users can type or paste any path (e.g. `~/.config/kak/` or `/var/log/`) on a new line and press `<ret>` to expand it alongside existing trees.
-- **Keybindings:** `<ret>` / `<c-o>` (toggle/open), `<tab>` (step-into folder / open file), `<c-l>` (move to parent folder), `r` (refresh node in-place), `.` (toggle hidden dotfiles), `q` (delete buffer).
+- **Keybindings:** `<ret>` / `<c-o>` (toggle/open), `<tab>` (step-into folder / open file), `<c-l>` (move to parent folder), `*` (recursively expand tree), `r` (refresh node in-place), `.` (toggle hidden dotfiles), `q` (delete buffer).
 
 ---
 

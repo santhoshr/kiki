@@ -21,6 +21,7 @@ hook -group kiki global WinSetOption filetype=kiki-tree %{
     map window normal <tab> ':kiki-tree-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
     map window normal <c-l> ':kiki-tree-parent<ret>' -docstring 'Move to parent folder'
     map window normal r ':kiki-tree-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
+    map window normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map window normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
     map window normal q ':delete-buffer<ret>' -docstring 'Close tree view'
 }
@@ -563,6 +564,163 @@ define-command -override -hidden \
             printf 'echo "kiki-file-tree: showing dotfiles"\n'
         fi
         printf 'kiki-tree-refresh\n'
+    }}
+
+# Recursively expand directory at cursor (or root node)
+define-command -override -hidden \
+    kiki-tree-expand-recursive %{ evaluate-commands %sh{
+        tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        printf 'write -force "%s"\n' "$tmp_file"
+        printf 'kiki-tree-expand-recursive-do "%s"\n' "$tmp_file"
+    }}
+
+define-command -override -hidden -params 1 \
+    kiki-tree-expand-recursive-do %{ evaluate-commands %sh{
+        tmp_file="$1"
+        cur="$kak_cursor_line"
+        hidden="$kak_opt_kiki_tree_show_hidden"
+        home_dir="$HOME"
+
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        function count_indent(str,    m) { match(str, /^[ ]*/); return RLENGTH }
+        function clean_name(str) { sub(/^[ ]*(\+ |- )/, "", str); sub(/\/$/, "", str); return str }
+        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        function expand_dir_rec(dir_path, ind_level,    cmd_d, cmd_f, e, base, d_cnt, f_cnt, d_arr, f_arr, d_i, f_i, child_indent, sp) {
+            child_indent = ""
+            for (sp = 1; sp <= ind_level; sp++) child_indent = child_indent " "
+
+            if (hidden == "true") {
+                cmd_d = "find \"" dir_path "\" -mindepth 1 -maxdepth 1 -type d ! -name \".\" ! -name \"..\" 2>/dev/null | sort -f"
+                cmd_f = "find \"" dir_path "\" -mindepth 1 -maxdepth 1 ! -type d ! -name \".\" ! -name \"..\" 2>/dev/null | sort -f"
+            } else {
+                cmd_d = "find \"" dir_path "\" -mindepth 1 -maxdepth 1 -type d ! -name \".*\" 2>/dev/null | sort -f"
+                cmd_f = "find \"" dir_path "\" -mindepth 1 -maxdepth 1 ! -type d ! -name \".*\" 2>/dev/null | sort -f"
+            }
+
+            d_cnt = 0
+            while ((cmd_d | getline e) > 0) {
+                base = e
+                sub(/^.*\//, "", base)
+                d_cnt++
+                d_arr[d_cnt] = base
+            }
+            close(cmd_d)
+
+            f_cnt = 0
+            while ((cmd_f | getline e) > 0) {
+                base = e
+                sub(/^.*\//, "", base)
+                f_cnt++
+                f_arr[f_cnt] = base
+            }
+            close(cmd_f)
+
+            for (d_i = 1; d_i <= d_cnt; d_i++) {
+                print child_indent "- " d_arr[d_i] "/" > out_tmp
+                expand_dir_rec(dir_path "/" d_arr[d_i], ind_level + 2)
+            }
+            for (f_i = 1; f_i <= f_cnt; f_i++) {
+                print child_indent "- " f_arr[f_i] > out_tmp
+            }
+        }
+
+        BEGIN {
+            total = 0
+            while ((getline line < tmp_file) > 0) {
+                total++
+                lines[total] = line
+            }
+            close(tmp_file)
+
+            if (cur < 1 || cur > total) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            # Find target directory at or above current line if on comment/file
+            target_idx = cur
+            while (target_idx >= 1 && lines[target_idx] ~ /^[ ]*#/ && count_indent(lines[target_idx]) > 0) {
+                target_idx--
+            }
+
+            t_line = lines[target_idx]
+            t_indent = count_indent(t_line)
+            clean_t = clean_name(t_line)
+
+            # If on file, walk up to its parent directory
+            if (t_line !~ /\/$/ && target_idx > 1) {
+                for (i = target_idx - 1; i >= 1; i--) {
+                    if (count_indent(lines[i]) < t_indent && lines[i] ~ /\/$/) {
+                        target_idx = i
+                        t_line = lines[target_idx]
+                        t_indent = count_indent(t_line)
+                        clean_t = clean_name(t_line)
+                        break
+                    }
+                }
+            }
+
+            if (t_indent == 0) {
+                full_p = expand_tilde(clean_t)
+            } else {
+                path_count = 1
+                path_arr[path_count] = clean_t
+                req_indent = t_indent
+                for (i = target_idx - 1; i >= 1; i--) {
+                    ind = count_indent(lines[i])
+                    if (ind < req_indent && lines[i] !~ /^[ ]*#/) {
+                        path_count++
+                        path_arr[path_count] = clean_name(lines[i])
+                        req_indent = ind
+                        if (ind == 0) break
+                    }
+                }
+                root_path = expand_tilde(path_arr[path_count])
+                full_p = root_path
+                for (i = path_count - 1; i >= 1; i--) {
+                    full_p = full_p "/" path_arr[i]
+                }
+            }
+
+            # Check if directory exists
+            check_d = "test -d \"" full_p "\" && echo 1 || echo 0"
+            check_d | getline is_dir
+            close(check_d)
+
+            if (!is_dir) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            # Find existing child lines to replace
+            end_idx = target_idx + 1
+            while (end_idx <= total && count_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ ]*#/) {
+                end_idx++
+            }
+
+            out_tmp = tmp_file ".out"
+            for (i = 1; i < target_idx; i++) print lines[i] > out_tmp
+
+            # Output expanded target directory header
+            expanded_prefix = ""
+            for (sp = 1; sp <= t_indent; sp++) expanded_prefix = expanded_prefix " "
+            expanded_prefix = expanded_prefix "- "
+
+            disp_name = clean_t
+            if (disp_name !~ /\/$/) disp_name = disp_name "/"
+            print expanded_prefix disp_name > out_tmp
+
+            # Recursively populate subfolders and files
+            expand_dir_rec(full_p, t_indent + 2)
+
+            for (i = end_idx; i <= total; i++) print lines[i] > out_tmp
+            close(out_tmp)
+
+            printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
+            printf "select %s.1,%s.1\n", target_idx, target_idx
+            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+        }'
     }}
 
 # Move to parent folder on <c-l> (replaces current tree branch with parent directory)

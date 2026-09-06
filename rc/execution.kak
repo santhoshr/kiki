@@ -167,5 +167,5 @@ read -r _ </dev/tty
 EOF
         fi
 
-        printf 'terminal "%s"\n' "$tmp_script"
+        printf 'kiki-spawn-terminal "%s"\n' "$tmp_script"
     }}

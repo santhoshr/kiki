@@ -6,6 +6,61 @@ define-command -override -hidden -params 1 \
         try %{ set-option window modelinefmt "%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} %{cyan}[kiki:%arg{1}]%{default} {{mode_info}} - %val{client}@[%val{session}]" }
     }
 
+# Spawn terminal matching the current active terminal emulator
+define-command -override -hidden -params 1 \
+    kiki-spawn-terminal %{ evaluate-commands %sh{
+        script_path="$1"
+        term_bin=""
+
+        # 1. Inspect ancestor processes of Kakoune client/server
+        target_pid="${kak_client_pid:-$$}"
+        while [ "$target_pid" -gt 1 ] 2>/dev/null; do
+            if [ -f "/proc/$target_pid/comm" ]; then
+                comm=$(cat "/proc/$target_pid/comm" 2>/dev/null)
+                case "$comm" in
+                    *ghostty*) term_bin="ghostty" ; break ;;
+                    *alacritty*) term_bin="alacritty" ; break ;;
+                    *kitty*) term_bin="kitty" ; break ;;
+                    *wezterm*) term_bin="wezterm" ; break ;;
+                    *foot*) term_bin="foot" ; break ;;
+                    *st*) term_bin="st" ; break ;;
+                    *xterm*) term_bin="xterm" ; break ;;
+                esac
+            fi
+            target_pid=$(awk '/PPid:/ {print $2}' "/proc/$target_pid/status" 2>/dev/null)
+        done
+
+        # 2. Inspect environment variables if process walk didn't match
+        if [ -z "$term_bin" ]; then
+            if [ -n "$GHOSTTY_RESOURCES_DIR" ] || [ "$TERM" = "xterm-ghostty" ]; then
+                term_bin="ghostty"
+            elif [ -n "$KITTY_PID" ] || [ -n "$KITTY_WINDOW_ID" ] || [ "$TERM" = "xterm-kitty" ]; then
+                term_bin="kitty"
+            elif [ -n "$ALACRITTY_LOG" ] || [ -n "$ALACRITTY_WINDOW_ID" ] || [ "$TERM" = "alacritty" ]; then
+                term_bin="alacritty"
+            elif [ -n "$WEZTERM_PANE" ]; then
+                term_bin="wezterm"
+            elif [ -n "$FOOT_SERVER_PATH" ] || [ "$TERM" = "foot" ]; then
+                term_bin="foot"
+            fi
+        fi
+
+        # 3. Launch with detected terminal binary or fall back to Kakoune's terminal command
+        if [ "$term_bin" = "ghostty" ] && command -v ghostty >/dev/null 2>&1; then
+            ( ghostty -e "$script_path" ) >/dev/null 2>&1 < /dev/null &
+        elif [ "$term_bin" = "kitty" ] && command -v kitty >/dev/null 2>&1; then
+            ( kitty "$script_path" ) >/dev/null 2>&1 < /dev/null &
+        elif [ "$term_bin" = "alacritty" ] && command -v alacritty >/dev/null 2>&1; then
+            ( alacritty -e "$script_path" ) >/dev/null 2>&1 < /dev/null &
+        elif [ "$term_bin" = "wezterm" ] && command -v wezterm >/dev/null 2>&1; then
+            ( wezterm start -- "$script_path" ) >/dev/null 2>&1 < /dev/null &
+        elif [ "$term_bin" = "foot" ] && command -v foot >/dev/null 2>&1; then
+            ( foot "$script_path" ) >/dev/null 2>&1 < /dev/null &
+        else
+            printf 'terminal "%s"\n' "$script_path"
+        fi
+    }}
+
 # Sudo authentication callback
 define-command -override -hidden -params 2 \
     kiki-sudo-auth-and-run %{ evaluate-commands %sh{

@@ -103,6 +103,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `t` | `kiki-topic` | Open topic file by name (`<topic>.kiki`) |
 | `T` | `kiki-list-topics` | List available topic files in a scratch buffer |
 | `p` | `kiki-cd` | Change Kakoune working directory to path |
+| `D` | `kiki-drop-to-shell` | Suspend Kakoune and drop to shell in selected directory |
 | `,` | — | Open quick scratchpad (`scratchpad.kiki`) |
 | `d` | — | Enter `kiki-delete` buffer cleanup menu |
 

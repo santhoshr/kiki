@@ -23,6 +23,7 @@ hook -group kiki global BufSetOption filetype=kiki-tree %{
     map buffer normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map buffer normal <minus> ':kiki-tree-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map buffer normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
+    map buffer normal D ':kiki-tree-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map buffer normal q ':delete-buffer<ret>' -docstring 'Close tree view'
 }
 
@@ -36,6 +37,7 @@ hook -group kiki global WinSetOption filetype=kiki-tree %{
     map window normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map window normal <minus> ':kiki-tree-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map window normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
+    map window normal D ':kiki-tree-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map window normal q ':delete-buffer<ret>' -docstring 'Close tree view'
 }
 
@@ -1391,6 +1393,138 @@ define-command -override -hidden -params 1 \
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s\n", new_sel_desc
             printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+        }'
+    }}
+
+# Drop to shell from tree (suspends Kakoune in the directory under the cursor)
+define-command -override -hidden \
+    kiki-tree-drop-to-shell %{ evaluate-commands %sh{
+        tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        printf 'write -force "%s"\n' "$tmp_file"
+        printf 'kiki-tree-drop-to-shell-do "%s"\n' "$tmp_file"
+    }}
+
+define-command -override -hidden -params 1 \
+    kiki-tree-drop-to-shell-do %{ evaluate-commands %sh{
+        tmp_file="$1"
+        cur="$kak_cursor_line"
+        home_dir="$HOME"
+
+        awk -v cur="$cur" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            sub(/\/$/, "", rest)
+            return rest
+        }
+        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+
+            if (t_indent == 0) return expand_tilde(clean_t)
+
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_tilde(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = full_p "/" path_arr[i]
+            }
+            return full_p
+        }
+
+        BEGIN {
+            total = 0
+            while ((getline line < tmp_file) > 0) {
+                total++
+                lines[total] = line
+            }
+            close(tmp_file)
+
+            if (cur < 1 || cur > total) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            target_idx = cur
+            while (target_idx >= 1 && lines[target_idx] ~ /^[ \t]*#/ && get_indent(lines[target_idx]) > 0) {
+                target_idx--
+            }
+
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+
+            if (t_line !~ /\/[ \t]*$/ && target_idx > 1) {
+                for (i = target_idx - 1; i >= 1; i--) {
+                    if (get_indent(lines[i]) < t_indent && lines[i] ~ /\/[ \t]*$/) {
+                        target_idx = i
+                        break
+                    }
+                }
+            }
+
+            full_p = resolve_full_path(lines, target_idx)
+            system("rm -f \"" tmp_file "\"")
+
+            printf "kiki-drop-to-shell %%{%s}\n", full_p
         }'
     }}
 

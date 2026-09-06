@@ -53,6 +53,7 @@ map global kiki T ':kiki-list-topics<ret>' -docstring 'List available topic file
 
 # Quick actions
 map global kiki p ':kiki-cd<ret>' -docstring 'Change directory to path.'
+map global kiki D ':kiki-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in selected directory.'
 
 # Scratchpad
 map global kiki , ':evaluate-commands %sh{ topics_dir=$(eval echo "$kak_opt_kiki_topics"); topics_dir=${topics_dir%/}; printf "edit %s/scratchpad.kiki" "$topics_dir"; }<ret>' -docstring 'Open scratchpad.'

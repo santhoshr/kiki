@@ -62,6 +62,56 @@ define-command -override -hidden -params 1 \
         fi
     }}
 
+# Drop to shell (suspend Kakoune and change directory to selected / target path)
+define-command -override -params 0..1 \
+    -docstring "kiki-drop-to-shell [<path>]: suspend Kakoune and drop to shell with current/selected directory" \
+    kiki-drop-to-shell %{
+        kiki-path-dispatch kiki-drop-to-shell-do %arg{@}
+    }
+
+define-command -override -hidden -params 1 \
+    kiki-drop-to-shell-do %{ evaluate-commands %sh{
+        raw="$1"
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        raw="${raw#\$ }"
+        raw="${raw#\$}"
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+        # Expand ~
+        case "$raw" in
+            "~"/*) path="${HOME}/${raw#"~"/}" ;;
+            "~") path="${HOME}" ;;
+            *) path="$raw" ;;
+        esac
+
+        if [ -z "$path" ]; then
+            path="$PWD"
+        fi
+
+        target_dir="$path"
+        if [ -f "$target_dir" ]; then
+            target_dir=$(dirname "$target_dir")
+        fi
+
+        if [ ! -d "$target_dir" ]; then
+            target_dir="$PWD"
+        fi
+
+        printf 'echo -debug "kiki-drop-to-shell: opening shell in %s (raw input: %s)"\n' "$target_dir" "$1"
+        printf 'change-directory %%{%s}\n' "$target_dir"
+        printf 'echo "kiki: opened shell in %s"\n' "$target_dir"
+
+        tmp_script=$(mktemp "${TMPDIR:-/tmp}"/kiki-drop-shell.XXXXXXXX)
+        chmod +x "$tmp_script"
+        cat << EOF > "$tmp_script"
+#!/bin/sh
+trap 'rm -f "\$0"' EXIT
+cd "$target_dir" || exit 1
+exec "\${SHELL:-sh}"
+EOF
+        printf 'kiki-spawn-terminal "%s"\n' "$tmp_script"
+    }}
+
 # Edit file at path
 define-command -override -params 0..1 \
     -docstring "kiki-edit [<path>]: open file from argument, selected text, or WORD under cursor" \

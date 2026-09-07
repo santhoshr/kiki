@@ -114,26 +114,9 @@ EOF
 
 # Edit file at path
 define-command -override -params 0..1 \
-    -docstring "kiki-edit [<path>]: open file from argument, selected text, or WORD under cursor" \
+    -docstring "kiki-edit [<path>]: open file from argument, selected text, or path under cursor" \
     kiki-edit %{
-        evaluate-commands %sh{
-            # 1. Explicit argument provided
-            if [ $# -ge 1 ]; then
-                printf 'kiki-edit-do %%{%s}\n' "$1"
-                exit 0
-            fi
-            # 2. Active multi-character selection
-            trimmed_sel=$(printf '%s\n' "$kak_selection" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-            if [ "${#trimmed_sel}" -gt 1 ]; then
-                printf 'kiki-edit-do %%{%s}\n' "$trimmed_sel"
-                exit 0
-            fi
-            # 3. No selection: select current WORD (<a-i><a-w>) under cursor
-            printf 'evaluate-commands %%{
-                execute-keys "<a-i><a-w>"
-                kiki-edit-do %%val{selection}
-            }\n'
-        }
+        kiki-path-dispatch kiki-edit-do %arg{@}
     }
 
 define-command -override -hidden -params 1 \
@@ -196,7 +179,9 @@ define-command -override -hidden -params 1 \
 
         printf 'execute-keys %%{;}\n'
 
-        if [ -n "$line" ] && [ -n "$col" ]; then
+        if [ -d "$path" ]; then
+            printf 'kiki-file-tree %%{%s}\n' "$path"
+        elif [ -n "$line" ] && [ -n "$col" ]; then
             printf 'edit %%{%s} %s %s\n' "$path" "$line" "$col"
         elif [ -n "$line" ]; then
             printf 'edit %%{%s} %s\n' "$path" "$line"

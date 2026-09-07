@@ -130,7 +130,7 @@ define-command -override -hidden -params 1.. \
         }\n' "$action" "$action"
     }}
 
-# Path dispatcher: handles explicit args, active selection, URI select, or line fallback
+# Path dispatcher: handles explicit args, active selection, tree line resolution, URI select, or line fallback
 define-command -override -hidden -params 1.. \
     kiki-path-dispatch %{ evaluate-commands %sh{
         action="$1"
@@ -146,14 +146,25 @@ define-command -override -hidden -params 1.. \
             printf '%s %%{%s}\n' "$action" "$trimmed_sel"
             exit 0
         fi
-        # 3. No selection: try kiki-uri-select or whole line
-        printf 'evaluate-commands %%{
-            try %%{
-                kiki-uri-select
-                %s %%val{selection}
-            } catch %%{
-                execute-keys "<esc>x"
-                %s %%val{selection}
+        # 3. If in a tree buffer or on a tree node line, resolve full tree path
+        # Check current line without affecting selection in draft
+        printf 'evaluate-commands -draft %%{
+            execute-keys "<esc>x"
+            evaluate-commands %%sh{
+                trimmed=$(printf "%%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+                if [ "$kak_opt_kiki_buffer_type" = "tree" ] || printf "%%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                    printf "evaluate-commands -client %%%%val{client} kiki-tree-resolve-path %%s\n" "%s"
+                else
+                    printf "evaluate-commands -client %%%%val{client} %%%%{
+                        try %%%%{
+                            kiki-uri-select
+                            %s %%%%val{selection}
+                        } catch %%%%{
+                            execute-keys %%%%{<esc>x}
+                            %s %%%%val{selection}
+                        }
+                    }\n"
+                fi
             }
-        }\n' "$action" "$action"
+        }\n' "$action" "$action" "$action"
     }}

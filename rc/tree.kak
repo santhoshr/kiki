@@ -1599,6 +1599,140 @@ define-command -override -hidden -params 1 \
         }'
     }}
 
+# Resolve path helper for tree nodes (used by kiki-edit, kiki-cd, kiki-drop-to-shell, kiki-path-dispatch)
+define-command -override -hidden -params 1 \
+    -docstring "kiki-tree-resolve-path <callback-cmd>: resolve the full hierarchical path under cursor in tree and call <callback-cmd> <resolved-path>" \
+    kiki-tree-resolve-path %{ evaluate-commands %sh{
+        tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        printf 'write -force "%s"\n' "$tmp_file"
+        printf 'kiki-tree-resolve-path-do "%s" %%{%s}\n' "$tmp_file" "$1"
+    }}
+
+define-command -override -hidden -params 2 \
+    kiki-tree-resolve-path-do %{ evaluate-commands %sh{
+        tmp_file="$1"
+        callback="$2"
+        cur="$kak_cursor_line"
+        home_dir="$HOME"
+
+        awk -v cur="$cur" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" -v cb="$callback" '
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            if (rest != "/") sub(/\/$/, "", rest)
+            return rest
+        }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
+
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+
+            if (t_indent == 0) return expand_path(clean_t)
+
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_path(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
+            }
+            return full_p
+        }
+
+        BEGIN {
+            total = 0
+            while ((getline line < tmp_file) > 0) {
+                total++
+                lines[total] = line
+            }
+            close(tmp_file)
+
+            if (cur < 1 || cur > total) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            t_line = lines[cur]
+            clean_t = get_clean_name(t_line)
+
+            if (clean_t == "" || t_line ~ /^[ \t]*#/) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            full_p = resolve_full_path(lines, cur)
+            system("rm -f \"" tmp_file "\"")
+
+            printf "%s %%{%s}\n", cb, full_p
+        }'
+    }}
+
 # Close tree buffers
 define-command -override -docstring "kiki-close-tree-buffers: close all file tree buffers" \
     kiki-close-tree-buffers %{

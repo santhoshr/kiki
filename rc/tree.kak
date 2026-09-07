@@ -131,7 +131,7 @@ define-command -override -hidden -params 1 \
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -179,17 +179,26 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
             t_line = lines[target_idx]
             t_indent = get_indent(t_line)
             clean_t = get_clean_name(t_line)
 
-            if (t_indent == 0) return expand_tilde(clean_t)
+            if (t_indent == 0) return expand_path(clean_t)
 
             path_count = 1
             path_arr[path_count] = clean_t
@@ -204,10 +213,10 @@ define-command -override -hidden -params 1 \
                     if (ind == 0) break
                 }
             }
-            root_path = expand_tilde(path_arr[path_count])
+            root_path = expand_path(path_arr[path_count])
             full_p = root_path
             for (i = path_count - 1; i >= 1; i--) {
-                full_p = full_p "/" path_arr[i]
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
             }
             return full_p
         }
@@ -293,7 +302,7 @@ define-command -override -hidden -params 1 \
                 for (sp = 1; sp <= t_indent; sp++) expanded_prefix = expanded_prefix " "
                 expanded_prefix = expanded_prefix "- "
 
-                disp_name = clean_t
+                disp_name = (t_indent == 0) ? full_p : clean_t
                 if (disp_name !~ /\/$/) disp_name = disp_name "/"
                 print expanded_prefix disp_name > out_tmp
 
@@ -354,7 +363,7 @@ define-command -override -hidden -params 1 \
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -402,17 +411,26 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
             t_line = lines[target_idx]
             t_indent = get_indent(t_line)
             clean_t = get_clean_name(t_line)
 
-            if (t_indent == 0) return expand_tilde(clean_t)
+            if (t_indent == 0) return expand_path(clean_t)
 
             path_count = 1
             path_arr[path_count] = clean_t
@@ -427,10 +445,10 @@ define-command -override -hidden -params 1 \
                     if (ind == 0) break
                 }
             }
-            root_path = expand_tilde(path_arr[path_count])
+            root_path = expand_path(path_arr[path_count])
             full_p = root_path
             for (i = path_count - 1; i >= 1; i--) {
-                full_p = full_p "/" path_arr[i]
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
             }
             return full_p
         }
@@ -550,7 +568,7 @@ define-command -override -hidden -params 1 \
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -598,17 +616,26 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
             t_line = lines[target_idx]
             t_indent = get_indent(t_line)
             clean_t = get_clean_name(t_line)
 
-            if (t_indent == 0) return expand_tilde(clean_t)
+            if (t_indent == 0) return expand_path(clean_t)
 
             path_count = 1
             path_arr[path_count] = clean_t
@@ -623,10 +650,10 @@ define-command -override -hidden -params 1 \
                     if (ind == 0) break
                 }
             }
-            root_path = expand_tilde(path_arr[path_count])
+            root_path = expand_path(path_arr[path_count])
             full_p = root_path
             for (i = path_count - 1; i >= 1; i--) {
-                full_p = full_p "/" path_arr[i]
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
             }
             return full_p
         }
@@ -764,7 +791,7 @@ define-command -override -hidden -params 1 \
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -812,17 +839,26 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
             t_line = lines[target_idx]
             t_indent = get_indent(t_line)
             clean_t = get_clean_name(t_line)
 
-            if (t_indent == 0) return expand_tilde(clean_t)
+            if (t_indent == 0) return expand_path(clean_t)
 
             path_count = 1
             path_arr[path_count] = clean_t
@@ -837,10 +873,10 @@ define-command -override -hidden -params 1 \
                     if (ind == 0) break
                 }
             }
-            root_path = expand_tilde(path_arr[path_count])
+            root_path = expand_path(path_arr[path_count])
             full_p = root_path
             for (i = path_count - 1; i >= 1; i--) {
-                full_p = full_p "/" path_arr[i]
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
             }
             return full_p
         }
@@ -977,7 +1013,7 @@ define-command -override -hidden -params 1 \
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -1025,10 +1061,19 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         BEGIN {
             total = 0
@@ -1062,7 +1107,7 @@ define-command -override -hidden -params 1 \
                 exit
             }
 
-            full_p = expand_tilde(clean_root)
+            full_p = expand_path(clean_root)
             sub(/\/$/, "", full_p)
 
             # Compute parent path using shell dirname
@@ -1145,7 +1190,7 @@ define-command -override -hidden -params 1 \
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v sel_desc="$selections_desc" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" '
+        awk -v cur="$cur" -v sel_desc="$selections_desc" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -1193,10 +1238,19 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         BEGIN {
             total = 0
@@ -1336,8 +1390,12 @@ define-command -override -hidden -params 1 \
 
                 out_count = 0
                 for (i = 1; i <= total; i++) {
-                    # Only keep lines belonging to target_root, discarding other trees
-                    if (root_of[i] == target_root && !remove_stage1[i]) {
+                    # Preserve all lines outside target_root; narrow only lines inside target_root
+                    if (root_of[i] != target_root) {
+                        out_count++
+                        out_lines[out_count] = lines[i]
+                        if (is_selected[i]) new_sel[out_count] = 1
+                    } else if (!remove_stage1[i]) {
                         out_count++
                         out_lines[out_count] = lines[i]
                         if (is_selected[i]) new_sel[out_count] = 1
@@ -1365,8 +1423,12 @@ define-command -override -hidden -params 1 \
 
                 out_count = 0
                 for (i = 1; i <= total; i++) {
-                    # Only keep lines belonging to target_root, discarding other trees
-                    if (root_of[i] == target_root && (lines[i] ~ /^[ ]*#/ || keep[i])) {
+                    # Preserve all lines outside target_root; narrow only lines inside target_root
+                    if (root_of[i] != target_root) {
+                        out_count++
+                        out_lines[out_count] = lines[i]
+                        if (is_selected[i]) new_sel[out_count] = 1
+                    } else if (lines[i] ~ /^[ ]*#/ || keep[i]) {
                         out_count++
                         out_lines[out_count] = lines[i]
                         if (is_selected[i]) new_sel[out_count] = 1
@@ -1458,17 +1520,26 @@ define-command -override -hidden -params 1 \
                 if (rest ~ /^ /) rest = substr(rest, 2)
                 else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
             }
-            sub(/\/$/, "", rest)
+            if (rest != "/") sub(/\/$/, "", rest)
             return rest
         }
-        function expand_tilde(path) { if (path ~ /^~\//) return home "/" substr(path, 3); else if (path == "~") return home; return path }
+        function expand_path(path,    p, full_real) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            cmd_real = "cd \"" p "\" 2>/dev/null && pwd || (cd \"$(dirname \"" p "\")\" 2>/dev/null && echo \"$(pwd)/$(basename \"" p "\")\" || echo \"" p "\")";
+            cmd_real | getline full_real;
+            close(cmd_real);
+            return (full_real != "") ? full_real : p;
+        }
 
         function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
             t_line = lines[target_idx]
             t_indent = get_indent(t_line)
             clean_t = get_clean_name(t_line)
 
-            if (t_indent == 0) return expand_tilde(clean_t)
+            if (t_indent == 0) return expand_path(clean_t)
 
             path_count = 1
             path_arr[path_count] = clean_t
@@ -1483,10 +1554,10 @@ define-command -override -hidden -params 1 \
                     if (ind == 0) break
                 }
             }
-            root_path = expand_tilde(path_arr[path_count])
+            root_path = expand_path(path_arr[path_count])
             full_p = root_path
             for (i = path_count - 1; i >= 1; i--) {
-                full_p = full_p "/" path_arr[i]
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
             }
             return full_p
         }

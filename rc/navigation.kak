@@ -289,6 +289,105 @@ define-command -override -hidden -params 1 \
         fi
     }}
 
+# Preview file at path in connected preview client (or spawn new client)
+define-command -override -params 0..1 \
+    -docstring "kiki-preview [<path>]: open or update buffer in preview client" \
+    kiki-preview %{
+        kiki-path-dispatch kiki-preview-do %arg{@}
+    }
+
+define-command -override -hidden -params 1 \
+    kiki-preview-do %{ evaluate-commands %sh{
+        raw="$1"
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
+        raw="${raw#\$ }"
+        raw="${raw#\$}"
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+        raw=$(printf '%s\n' "$raw" | sed -e 's/:[[:space:]].*$//' -e 's/:$//')
+
+        line=""
+        col=""
+        path=""
+
+        part1=$(printf '%s\n' "$raw" | cut -d: -f1)
+        part2=$(printf '%s\n' "$raw" | cut -d: -f2)
+        part3=$(printf '%s\n' "$raw" | cut -d: -f3)
+
+        if [ -n "$part1" ] && [ -n "$part2" ] && [ "$part2" -eq "$part2" ] 2>/dev/null; then
+            path="$part1"
+            line="$part2"
+            if [ -n "$part3" ] && [ "$part3" -eq "$part3" ] 2>/dev/null; then
+                col="$part3"
+            fi
+        else
+            path="$raw"
+        fi
+
+        case "$path" in
+            "~"/*) path="${HOME}/${path#"~"/}" ;;
+            "~") path="${HOME}" ;;
+        esac
+
+        if [ ! -e "$path" ] && [ -n "$kak_opt_kiki_topics" ]; then
+            topics_dir=$(eval echo "$kak_opt_kiki_topics")
+            case "$topics_dir" in
+                "~"/*) topics_dir="${HOME}/${topics_dir#"~"/}" ;;
+                "~") topics_dir="${HOME}" ;;
+            esac
+            topics_dir="${topics_dir%/}/"
+            if [ -f "${topics_dir}${path}.kiki" ]; then
+                path="${topics_dir}${path}.kiki"
+            elif [ -f "${topics_dir}${path}" ]; then
+                path="${topics_dir}${path}"
+            fi
+        fi
+
+        if [ -z "$path" ]; then
+            printf 'echo -markup "{Error}kiki-preview: no file path found on line"\n'
+            exit 0
+        fi
+
+        if [ -d "$path" ]; then
+            target_cmd="kiki-file-tree %{$path}"
+        elif [ -n "$line" ] && [ -n "$col" ]; then
+            target_cmd="edit %{$path} $line $col"
+        elif [ -n "$line" ]; then
+            target_cmd="edit %{$path} $line"
+        else
+            target_cmd="edit %{$path}"
+        fi
+
+        target_client=""
+        for c in $kak_client_list; do
+            if [ "$c" = "preview" ]; then
+                target_client="preview"
+                break
+            elif [ -n "$kak_opt_toolsclient" ] && [ "$c" = "$kak_opt_toolsclient" ]; then
+                target_client="$kak_opt_toolsclient"
+            fi
+        done
+
+        if [ -n "$target_client" ]; then
+            printf 'evaluate-commands -client "%s" %%{ %s; set-option buffer kiki_is_preview true }\n' "$target_client" "$target_cmd"
+            printf 'echo "kiki: updated preview client [%s] with %s"\n' "$target_client" "$path"
+        else
+            tmp_script=$(mktemp "${TMPDIR:-/tmp}"/kiki-preview-client.XXXXXXXX)
+            chmod +x "$tmp_script"
+            escaped_target=$(printf '%s' "$target_cmd" | sed 's/"/\\"/g')
+            cat << EOF > "$tmp_script"
+#!/bin/sh
+trap 'rm -f "\$0"' EXIT
+exec kak -c "$kak_session" -e "rename-client preview; $escaped_target; set-option buffer kiki_is_preview true"
+EOF
+            printf 'kiki-spawn-terminal "%s"\n' "$tmp_script"
+            printf 'echo "kiki: launched preview client for %s"\n' "$path"
+        fi
+    }}
+
 # List path contents
 define-command -override -params 0..1 \
     -docstring "kiki-ls [<path>]: ls -alh on argument, selection, or URI on current line" \

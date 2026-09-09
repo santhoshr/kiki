@@ -81,6 +81,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `<ret>` / `<enter>`: Execute command via FIFO (`kiki-fifo`), open file tree on directories, open file on files, toggle expand/collapse in file tree, or open topic.
   - `<tab>`: Execute command inline (`kiki-inline`), open file tree on directories / step into folder, open file on files, or open topic.
   - `O`: Smart contextual open (topic in topic list, file tree if path, FIFO if command, fallback native `O`).
+  - `p`: Open or replace buffer view in connected Kakoune preview client (`preview`).
   - `P`: Change directory to folder path or parent of file path (in prompt lines, tree lines, or path lines).
   - `<c-o>`: Toggle directory expand/collapse or open file.
   - `<c-l>`: Move up to parent folder.
@@ -113,9 +114,10 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor/selection |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topic files) |
 | `o` | `kiki-file-tree` | Open interactive collapsible file tree |
+| `p` | `kiki-preview` | Open or replace buffer in connected preview client |
 | `t` | `kiki-topic` | Open topic file by name (`<topic>.kiki`) |
 | `T` | `kiki-list-topics` | List available topic files in a scratch buffer |
-| `p` | `kiki-cd` | Change Kakoune working directory to path |
+| `P` | `kiki-cd` | Change Kakoune working directory to path |
 | `D` | `kiki-drop-to-shell` | Suspend Kakoune and drop to shell in selected directory |
 | `q` | `kiki-scratchpad` | Open disposable quick scratchpad (`*kiki-scratchpad-<timestamp>*`) |
 | `,` | — | Open quick scratchpad (`scratchpad.kiki`) |
@@ -130,6 +132,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `t` | `kiki-close-topics-buffers` | Close all `*kiki-topics-*` buffers |
 | `r` | `kiki-close-tree-buffers` | Close all `*kiki-file-tree*` buffers |
 | `s` | `kiki-close-scratchpad-buffers` | Close all `*kiki-scratchpad-*` buffers |
+| `p` | `kiki-close-preview-buffers` | Close all `*kiki-preview*` buffers |
 | `k` | `kiki-close-file-buffers` | Close all open `.kiki` file buffers |
 
 ---

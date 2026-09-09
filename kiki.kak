@@ -13,6 +13,7 @@ try %{ declare-user-mode kiki-delete }
 declare-option str kiki_prefix "$ "
 declare-option -docstring "Directory containing kiki topic files" str kiki_topics "~/.config/kak/kiki/"
 declare-option -docstring "Buffer category, set to kiki-buffer for all kiki buffers" str kiki_buffer_type ""
+declare-option -docstring "Mark buffer as previewed buffer" bool kiki_is_preview false
 declare-option -docstring "Custom interactive shell for kiki drop-to-shell (defaults to auto-detected user shell)" str kiki_shell ""
 
 ##
@@ -47,13 +48,14 @@ map global kiki u ':kiki-open-url<ret>' -docstring 'Open URL from line or buffer
 map global kiki l ':kiki-ls<ret>' -docstring 'ls -al on path.'
 map global kiki e ':kiki-edit<ret>' -docstring 'Open file at path.'
 map global kiki o ':kiki-file-tree<ret>' -docstring 'Open file tree for directory.'
+map global kiki p ':kiki-preview<ret>' -docstring 'Open or replace buffer in preview client.'
 
 # Topics
 map global kiki t ':kiki-topic<ret>' -docstring ':e topic file with name.'
 map global kiki T ':kiki-list-topics<ret>' -docstring 'List available topic files.'
 
 # Quick actions
-map global kiki p ':kiki-cd<ret>' -docstring 'Change directory to path.'
+map global kiki P ':kiki-cd<ret>' -docstring 'Change directory to path.'
 map global kiki D ':kiki-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in selected directory.'
 
 # Scratchpad
@@ -69,4 +71,5 @@ map global kiki-delete f ':kiki-close-fifo-buffers<ret>' -docstring 'Close fifo 
 map global kiki-delete t ':kiki-close-topics-buffers<ret>' -docstring 'Close topics buffers.'
 map global kiki-delete r ':kiki-close-tree-buffers<ret>' -docstring 'Close file tree buffers.'
 map global kiki-delete s ':kiki-close-scratchpad-buffers<ret>' -docstring 'Close scratchpad buffers.'
+map global kiki-delete p ':kiki-close-preview-buffers<ret>' -docstring 'Close preview buffers.'
 map global kiki-delete k ':kiki-close-file-buffers<ret>' -docstring 'Close kiki file buffers.'

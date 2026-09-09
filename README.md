@@ -200,6 +200,7 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 - `-`: **Narrow** — hides unselected sibling folders to keep view focused.
 - `r`: **In-Place Refresh** — re-reads the selected directory node from disk without losing your tree state.
 - `.`: **Toggle Hidden Files** — shows or hides dotfiles on the fly.
+- `p`: **Preview Client** — opens or replaces the buffer view in a connected Kakoune preview client in real time.
 - `P`: Change Kakoune's working directory (`$PWD`) to the selected folder.
 - `D`: Drop into an interactive shell in the selected folder.
 - `q`: Close the file tree buffer.
@@ -229,7 +230,9 @@ https://kakoune.org
   ```
 - **Edit file (`<e>`):**
   Hover on the path above and press `<e>`. Kiki opens the file directly, positioning the cursor at `line:col` if specified in compiler/grep format. If the file does not exist in `$PWD`, it automatically searches your topic notes.
-- **Change working directory (`<p>` or `P`):**
+- **Preview in connected client (`<p>` or `:kiki-preview`):**
+  Hover on a path or file tree item and press `<p>`. If a Kakoune client named `preview` (or `$toolsclient`) is connected to the session, it updates the view in that client instantly. If not, it spawns a new terminal window attached to your session.
+- **Change working directory (`<P>` or `P`):**
   Changes Kakoune's working directory to the target folder or the parent folder of a file.
 - **Drop to shell (`<D>`):**
   Suspends Kakoune and opens an interactive shell in the directory under cursor.
@@ -263,6 +266,7 @@ Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tr
 | `<ret>` | Streams command (FIFO) / Opens file / Opens tree / Toggles tree folder / Opens topic |
 | `<tab>` | Executes inline / Opens file / Steps into folder / Opens topic |
 | `O` | Smart open (FIFO on command, file tree on path, opens topic in list) |
+| `p` | Opens or updates buffer view in connected preview client (`preview`) |
 | `P` | Changes working directory to folder or file's parent directory |
 | `D` | Terminal shell on command, or drops into interactive shell in folder |
 | `<a-c>` | Inserts `$ ` on current empty line or next available empty line (normal & insert mode) |
@@ -287,6 +291,7 @@ Press `,d` to enter the cleanup menu:
 | `t` | `kiki-close-topics-buffers` | Close all `*kiki-topics-*` list buffers |
 | `r` | `kiki-close-tree-buffers` | Close all `*kiki-file-tree*` buffers |
 | `s` | `kiki-close-scratchpad-buffers` | Close all `*kiki-scratchpad-*` buffers |
+| `p` | `kiki-close-preview-buffers` | Close all `*kiki-preview*` buffers |
 | `k` | `kiki-close-file-buffers` | Close all open `.kiki` file buffers |
 
 ---
@@ -351,9 +356,10 @@ set-option global kiki_tree_show_hidden false
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topics) |
 | `o` | `kiki-file-tree` | Open interactive collapsible file tree |
+| `p` | `kiki-preview` | Open or replace buffer in preview client |
 | `t` | `kiki-topic` | Open topic file by name (`<topic>.kiki`) |
 | `T` | `kiki-list-topics` | List available topic files in scratch buffer |
-| `p` | `kiki-cd` | Change Kakoune working directory to path |
+| `P` | `kiki-cd` | Change Kakoune working directory to path |
 | `D` | `kiki-drop-to-shell` | Drop to shell in selected directory |
 | `q` | `kiki-scratchpad` | Open disposable quick scratchpad |
 | `,` | — | Open persistent `scratchpad.kiki` |

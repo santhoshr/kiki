@@ -18,6 +18,8 @@ bundle/kiki/
     ├── execution.kak    # Execution engines (inline, scratch, fifo, background, shell)
     ├── navigation.kak   # Filesystem & topic navigation (edit, ls, cd, topic, list-topics)
     ├── buffers.kak      # Buffer management, filetype hooks, cleanup commands
+    ├── tree.kak         # Interactive multi-root collapsible file tree
+    ├── git.kak          # Git status recognition, highlighters, and action menu popup
     └── highlighters.kak # Syntax regex highlighting ($ prefix, commands, comments)
 ```
 
@@ -79,20 +81,25 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - **Directory Trap:** A `RuntimeError` hook intercepts Kakoune's native `:edit <dir>` (*"is a directory"*) error and immediately launches `kiki-file-tree` on that directory.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Keybindings in Kiki Buffers:**
-  - `<ret>` / `<enter>`: Execute command via FIFO (`kiki-fifo`), open file tree on directories, open file on files, toggle expand/collapse in file tree, or open topic.
-  - `<tab>`: Execute command inline (`kiki-inline`), open file tree on directories / step into folder, open file on files, or open topic.
+  - `<ret>` / `<enter>`: Execute command via FIFO (`kiki-fifo`), open file tree on directories, open file on files, trigger Git action popup on git status lines, toggle expand/collapse in file tree, or open topic.
+  - `<tab>`: Execute command inline (`kiki-inline`), open file tree on directories / step into folder, rotate next Git status file (triggering action popup), open file on files, or open topic.
+  - `<s-tab>`: Step back in file tree (`kiki-tree-parent`) or rotate previous Git status file (triggering action popup).
   - `O`: Smart contextual open (topic in topic list, file tree if path, FIFO if command, fallback native `O`).
   - `p`: Open or replace buffer view in connected Kakoune preview client (`preview`).
-  - `P`: Change directory to folder path or parent of file path (in prompt lines, tree lines, or path lines).
+  - `P`: Change directory to folder path or parent of file path.
   - `<c-o>`: Toggle directory expand/collapse or open file.
   - `<c-l>`: Move up to parent folder.
   - `*`: Recursively expand directory tree.
   - `-`: Narrow unselected subtrees/siblings.
-  - `r`: Refresh directory node in-place.
+  - `r`: Refresh directory node or Git status block in-place.
   - `.`: Toggle hidden dotfiles.
   - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
-  - `D`: Execute command in terminal shell (matching `,!`), or drop to shell in directory/path under cursor.
+  - `D`: Execute command in terminal shell, or drop to shell in directory/path under cursor.
   - `q`: Close/delete Kiki buffer.
+
+### F. Git Status Recognition & Action Menu (`rc/git.kak`)
+- **Status Highlighting:** Highlights git status lines automatically (staged: green, modified: yellow, untracked: magenta, deleted: red).
+- **Interactive Action Menu (`kiki-git`):** Pressing `<ret>` on any git status entry opens an action popup without editing the file directly.
 
 ---
 
@@ -111,6 +118,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `f` | `kiki-fifo` | Asynchronously stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell in `$PWD` |
+| `g` | `kiki-git-status` | Stream git status into dedicated FIFO buffer |
 | `u` | `kiki-open-url` | Open URL from line or buffer in web browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor/selection |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topic files) |
@@ -122,9 +130,88 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `D` | `kiki-drop-to-shell` | Suspend Kakoune and drop to shell in selected directory |
 | `q` | `kiki-scratchpad` | Open disposable quick scratchpad (`*kiki-scratchpad-<timestamp>*`) |
 | `,` | — | Open quick scratchpad (`scratchpad.kiki`) |
-| `d` | — | Enter `kiki-delete` buffer cleanup menu |
+| `d` | — | Enter `delete` buffer cleanup menu |
 
-### User Mode: `kiki-delete` (Buffer Cleanup)
+### User Mode: `modified` (Modified / Conflict File Popup)
+
+| Key | Command | Description |
+| :--- | :--- | :--- |
+| `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
+| `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `s` | `kiki-git-stage` | Stage file (`git add`) |
+| `a` | `kiki-git-stage` | Stage file (`git add`) |
+| `X` | `kiki-git-restore` | Restore file changes with confirmation (`git restore`) |
+| `S` | `kiki-git-stage-all` | Stage all changes (`git add -A`) |
+| `c` | — | Enter `commit` commit popup menu |
+| `v` | `kiki-git-diff` | View diff for file in interactive terminal shell |
+| `d` | `kiki-git-diff-all` | View all unstaged diffs in interactive terminal shell |
+| `D` | `kiki-git-diff-all-cached` | View all staged diffs in interactive terminal shell |
+| `l` | `kiki-git-log` | View git log in interactive terminal shell |
+| `r` | `kiki-git-refresh` | Refresh Git status output in-place |
+| `p` | `kiki-git-preview` | Preview file in connected preview client |
+| `e` | `kiki-git-edit` | Open file directly in Kakoune |
+| `q` | — | Close popup menu |
+
+### User Mode: `staged` (Staged File Popup)
+
+| Key | Command | Description |
+| :--- | :--- | :--- |
+| `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
+| `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `u` | `kiki-git-unstage` | Unstage file (`git restore --staged`) |
+| `X` | `kiki-git-restore-staged` | Restore & unstage file with confirmation |
+| `U` | `kiki-git-unstage-all` | Unstage all changes (`git restore --staged .`) |
+| `c` | — | Enter `commit` commit popup menu |
+| `v` | `kiki-git-diff-cached` | View cached diff for file in interactive terminal shell |
+| `d` | `kiki-git-diff-all` | View all unstaged diffs in interactive terminal shell |
+| `D` | `kiki-git-diff-all-cached` | View all staged diffs in interactive terminal shell |
+| `l` | `kiki-git-log` | View git log in interactive terminal shell |
+| `r` | `kiki-git-refresh` | Refresh Git status output in-place |
+| `p` | `kiki-git-preview` | Preview file in connected preview client |
+| `e` | `kiki-git-edit` | Open file directly in Kakoune |
+| `q` | — | Close popup menu |
+
+### User Mode: `untracked` (Untracked File Popup)
+
+| Key | Command | Description |
+| :--- | :--- | :--- |
+| `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
+| `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `a` | `kiki-git-add` | Add file (`git add`) |
+| `s` | `kiki-git-stage` | Stage file (`git add`) |
+| `X` | `kiki-git-clean` | Clean/remove untracked file with confirmation (`git clean`) |
+| `S` | `kiki-git-stage-all` | Stage all changes (`git add -A`) |
+| `c` | — | Enter `commit` commit popup menu |
+| `v` | `kiki-git-diff` | View diff for file in interactive terminal shell |
+| `d` | `kiki-git-diff-all` | View all unstaged diffs in interactive terminal shell |
+| `D` | `kiki-git-diff-all-cached` | View all staged diffs in interactive terminal shell |
+| `l` | `kiki-git-log` | View git log in interactive terminal shell |
+| `r` | `kiki-git-refresh` | Refresh Git status output in-place |
+| `p` | `kiki-git-preview` | Preview file in connected preview client |
+| `e` | `kiki-git-edit` | Open file directly in Kakoune |
+| `q` | — | Close popup menu |
+
+### User Mode: `git` (Limited/Common Git Actions Popup)
+
+| Key | Command | Description |
+| :--- | :--- | :--- |
+| `c` | — | Enter `commit` commit popup menu |
+| `l` | `kiki-git-log` | View git log in interactive terminal shell |
+| `d` | `kiki-git-diff-all` | View diff in interactive terminal shell |
+| `r` | `kiki-git-refresh` | Refresh Git status output in-place |
+| `q` | — | Close popup menu |
+
+### User Mode: `commit` (Git Commit Popup)
+
+| Key | Command | Description |
+| :--- | :--- | :--- |
+| `c` | `kiki-git-commit` | Commit staged changes (`git commit`) |
+| `a` | `kiki-git-commit-all` | Commit all tracked changes (`git commit -a`) |
+| `A` | `kiki-git-commit-amend` | Amend commit (`git commit --amend`) |
+| `N` | `kiki-git-commit-amend-no-edit` | Amend commit without editing message (`git commit --amend --no-edit`) |
+| `q` | — | Close popup menu |
+
+### User Mode: `delete` (Buffer Cleanup)
 
 | Key | Command | Description |
 | :--- | :--- | :--- |

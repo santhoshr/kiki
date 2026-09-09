@@ -18,7 +18,8 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command in FIFO, open file/folder, or toggle tree'
     map buffer normal <c-o> ':kiki-smart-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
     map buffer normal O ':kiki-smart-open<ret>' -docstring 'Open topic if topic list, file tree if path, or fifo if command'
-    map buffer normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Execute command inline, open file/folder, or step into tree'
+    map buffer normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Execute command inline, open file/folder, step into tree, or rotate git file'
+    map buffer normal <s-tab> ':kiki-smart-step-back<ret>' -docstring 'Step back in tree or rotate previous git file'
     map buffer normal p ':kiki-smart-preview<ret>' -docstring 'Open or replace buffer view in preview client'
     map buffer normal P ':kiki-smart-cd<ret>' -docstring 'Change directory to folder path or parent of file path'
     map buffer normal <c-l> ':kiki-smart-parent<ret>' -docstring 'Move to parent folder'
@@ -37,7 +38,8 @@ hook -group kiki global WinSetOption filetype=kiki %{
     map window normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command in FIFO, open file/folder, or toggle tree'
     map window normal <c-o> ':kiki-smart-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
     map window normal O ':kiki-smart-open<ret>' -docstring 'Open topic if topic list, file tree if path, or fifo if command'
-    map window normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Execute command inline, open file/folder, or step into tree'
+    map window normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Execute command inline, open file/folder, step into tree, or rotate git file'
+    map window normal <s-tab> ':kiki-smart-step-back<ret>' -docstring 'Step back in tree or rotate previous git file'
     map window normal p ':kiki-smart-preview<ret>' -docstring 'Open or replace buffer view in preview client'
     map window normal P ':kiki-smart-cd<ret>' -docstring 'Change directory to folder path or parent of file path'
     map window normal <c-l> ':kiki-smart-parent<ret>' -docstring 'Move to parent folder'
@@ -115,7 +117,21 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 4. Tree node (+ dir/ or - file) or filesystem path
+            # 4. Git status line (files, headers, hints, clean tree lines)
+            case "$kak_bufname" in
+                \*kiki-fifo-git*|\*kiki-fifo-*git*)
+                    printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
+                printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
+            fi
+
+            # 5. Tree node (+ dir/ or - file) or filesystem path
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
                 printf '%s %%{ kiki-tree-open }\n' "$eval_cmd"
                 exit 0
@@ -124,7 +140,7 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 5. Check if current word/URI is an existing path
+            # 6. Check if current word/URI is an existing path
             uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
             case "$uri" in
                 "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
@@ -139,7 +155,7 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 6. Fallback: native Kakoune ret key
+            # 7. Fallback: native Kakoune ret key
             printf '%s %%{ execute-keys <ret> }\n' "$eval_cmd"
         }
     }}
@@ -312,7 +328,21 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 4. Tree node (+ dir/ or - file) or filesystem path
+            # 4. Git status buffer or git status lines -> rotate forward to next file
+            case "$kak_bufname" in
+                \*kiki-fifo-git*|\*kiki-fifo-*git*)
+                    printf '%s %%{ kiki-git-rotate-file 1 }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
+                printf '%s %%{ kiki-git-rotate-file 1 }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 5. Tree node (+ dir/ or - file) or filesystem path
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
                 printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
                 exit 0
@@ -321,7 +351,7 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 5. Check if current word/URI is an existing path
+            # 6. Check if current word/URI is an existing path
             uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
             case "$uri" in
                 "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
@@ -336,8 +366,47 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 6. Fallback: native Kakoune tab key
+            # 7. Fallback: native Kakoune tab key
             printf '%s %%{ execute-keys <tab> }\n' "$eval_cmd"
+        }
+    }}
+
+define-command -override -hidden \
+    kiki-smart-step-back %{ evaluate-commands -draft %{
+        execute-keys "<esc>x"
+        evaluate-commands %sh{
+            trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Git status buffer or git status lines -> rotate backward to previous file
+            case "$kak_bufname" in
+                \*kiki-fifo-git*|\*kiki-fifo-*git*)
+                    printf '%s %%{ kiki-git-rotate-file -1 }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
+                printf '%s %%{ kiki-git-rotate-file -1 }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 2. Tree buffer or tree node lines -> step back / parent
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 3. Fallback: native Kakoune s-tab key
+            printf '%s %%{ execute-keys <s-tab> }\n' "$eval_cmd"
         }
     }}
 

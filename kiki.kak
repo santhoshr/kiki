@@ -5,7 +5,7 @@
 # User modes
 # ----------
 try %{ declare-user-mode kiki }
-try %{ declare-user-mode kiki-delete }
+try %{ declare-user-mode delete }
 
 ##
 # Options
@@ -42,6 +42,7 @@ map global kiki s ':kiki-scratch<ret>' -docstring 'Execute and return in scratch
 map global kiki f ':kiki-fifo<ret>' -docstring 'Execute and pipe output to fifo.'
 map global kiki b ':kiki-background<ret>' -docstring 'Execute in the background.'
 map global kiki '!' ':kiki-shell<ret>' -docstring 'Execute in terminal shell.'
+map global kiki g ':kiki-git-status<ret>' -docstring 'Show git status.'
 
 # File system & URL navigation
 map global kiki u ':kiki-open-url<ret>' -docstring 'Open URL from line or buffer.'
@@ -63,13 +64,13 @@ map global kiki q ':kiki-scratchpad<ret>' -docstring 'Open disposable quick scra
 map global kiki , ':evaluate-commands %sh{ topics_dir=$(eval echo "$kak_opt_kiki_topics"); topics_dir=${topics_dir%/}; printf "edit %s/scratchpad.kiki" "$topics_dir"; }<ret>' -docstring 'Open scratchpad.kiki file.'
 
 # Delete menu
-map global kiki d ':enter-user-mode kiki-delete<ret>' -docstring 'Delete/close kiki buffers menu.'
+map global kiki d ':enter-user-mode delete<ret>' -docstring 'Delete/close kiki buffers menu.'
 
 # Delete submenu mappings
-map global kiki-delete a ':kiki-close-all-buffers<ret>' -docstring 'Close all kiki buffers.'
-map global kiki-delete f ':kiki-close-fifo-buffers<ret>' -docstring 'Close fifo buffers.'
-map global kiki-delete t ':kiki-close-topics-buffers<ret>' -docstring 'Close topics buffers.'
-map global kiki-delete r ':kiki-close-tree-buffers<ret>' -docstring 'Close file tree buffers.'
-map global kiki-delete s ':kiki-close-scratchpad-buffers<ret>' -docstring 'Close scratchpad buffers.'
-map global kiki-delete p ':kiki-close-preview-buffers<ret>' -docstring 'Close preview buffers.'
-map global kiki-delete k ':kiki-close-file-buffers<ret>' -docstring 'Close kiki file buffers.'
+map global delete a ':kiki-close-all-buffers<ret>' -docstring 'Close all kiki buffers.'
+map global delete f ':kiki-close-fifo-buffers<ret>' -docstring 'Close fifo buffers.'
+map global delete t ':kiki-close-topics-buffers<ret>' -docstring 'Close topics buffers.'
+map global delete r ':kiki-close-tree-buffers<ret>' -docstring 'Close file tree buffers.'
+map global delete s ':kiki-close-scratchpad-buffers<ret>' -docstring 'Close scratchpad buffers.'
+map global delete p ':kiki-close-preview-buffers<ret>' -docstring 'Close preview buffers.'
+map global delete k ':kiki-close-file-buffers<ret>' -docstring 'Close all open .kiki buffers.'

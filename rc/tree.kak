@@ -667,7 +667,7 @@ define-command -override -hidden -params 1 \
             }
             close(tmp_file)
 
-            if (cur < 1 || cur > total) {
+            if (cur < 1 || cur > total || lines[cur] ~ /^[ \t]*$/) {
                 system("rm -f \"" tmp_file "\"")
                 exit
             }

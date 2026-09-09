@@ -23,19 +23,57 @@ define-command -override -hidden -params 1 \
             exit 0
         fi
 
+        tmp_buf=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-in-buf.XXXXXXXX)
+        printf 'write -sync -force "%s"\n' "$tmp_buf"
+        printf 'kiki-inline-replace-do "%s" "%s"\n' "$cmd" "$tmp_buf"
+    }}
+
+define-command -override -hidden -params 2 \
+    kiki-inline-replace-do %{ evaluate-commands %sh{
+        cmd="$1"
+        tmp_buf="$2"
+        cur_line="$kak_cursor_line"
+
+        res=$(awk -v cur="$kak_cursor_line" -v pfx="${kak_opt_kiki_prefix:-\$ }" '
+        BEGIN { total = 0 }
+        { total++; lines[total] = $0 }
+        END {
+            start_line = cur + 1
+            end_line = start_line - 1
+            for (i = start_line; i <= total; i++) {
+                if (substr(lines[i], 1, length(pfx)) == pfx || substr(lines[i], 1, 2) == "$ " || substr(lines[i], 1, 1) == ">") break
+                end_line = i
+            }
+            # If there are empty lines before the next command / section, keep the last empty line as separator
+            if (end_line < total && end_line >= start_line && lines[end_line] ~ /^[ \t]*$/) {
+                end_line--
+            }
+            print start_line "|" end_line
+        }' "$tmp_buf")
+
+        rm -f "$tmp_buf"
+
+        start_line=$(printf '%s\n' "$res" | cut -d'|' -f1)
+        end_line=$(printf '%s\n' "$res" | cut -d'|' -f2)
+
         tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-inline.XXXXXXXX)
         ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
 
-        if [ -s "$tmp_out" ]; then
-            start_line="$kak_cursor_line"
-            first_line=$(( start_line + 1 ))
-            num_lines=$(wc -l < "$tmp_out")
-            [ "$num_lines" -eq 0 ] && num_lines=1
-            last_line=$(( first_line + num_lines - 1 ))
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-            printf 'execute-keys %%{o<esc>!cat %s<ret>}\n' "$tmp_out"
-            printf 'select %s.1,%s.99999999\n' "$first_line" "$last_line"
+        if [ "$start_line" -le "$end_line" ]; then
+            if [ -s "$tmp_out" ]; then
+                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{|cat "%s"<ret>}; select %s.1,%s.1 }\n' "$eval_cmd" "$start_line" "$end_line" "$tmp_out" "$cur_line" "$cur_line"
+            else
+                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{d}; select %s.1,%s.1 }\n' "$eval_cmd" "$start_line" "$end_line" "$cur_line" "$cur_line"
+            fi
+        else
+            if [ -s "$tmp_out" ]; then
+                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{o<esc>|cat "%s"<ret>}; select %s.1,%s.1 }\n' "$eval_cmd" "$cur_line" "$cur_line" "$tmp_out" "$cur_line" "$cur_line"
+            fi
         fi
+
         printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
     }}
 

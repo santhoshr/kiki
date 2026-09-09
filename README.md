@@ -257,14 +257,59 @@ Topics are persistent notes stored in your `kiki_topics` directory (default: `~/
 
 ---
 
+## Interactive Git Status & Action Menu:
+
+When you run `$ git status` or `$ git status -s` inside Kiki buffers, Kiki automatically highlights the status entries:
+- **Green**: Staged changes (`new file:`, `A `, `M `)
+- **Yellow**: Unstaged modifications (`modified:`, ` M`)
+- **Magenta**: Untracked files (`Untracked files:`, `??`)
+- **Red**: Deleted files (`deleted:`, ` D`) or merge conflicts
+
+Pressing `<ret>` or rotating with `<tab>` / `<s-tab>` opens the **Smart Git Action Popup** tailored to the file's current status:
+- **Modified files:** `<s>` Stage, `<X>` Restore (prompt confirmation), `<S>` Stage All, `<v>` Diff, `<e>` Edit, `<p>` Preview
+- **Staged files:** `<u>` Unstage, `<X>` Restore & Discard Staged (prompt confirmation), `<U>` Unstage All, `<v>` Diff (cached), `<e>` Edit, `<p>` Preview
+- **Untracked files:** `<a>` Add, `<s>` Stage, `<X>` Clean untracked file (prompt confirmation), `<S>` Stage All, `<v>` Diff, `<e>` Edit, `<p>` Preview
+
+| Key | Action | Contextual Description |
+| :--- | :--- | :--- |
+| `<tab>` | **Next File** | Rotates to next changed file with action popup open |
+| `<s-tab>` | **Prev File** | Rotates to previous changed file with action popup open |
+| `s` | **Stage** | Stages modified or untracked file (`git add`) |
+| `a` | **Add** | Adds/stages untracked or modified file (`git add`) |
+| `u` | **Unstage** | Unstages staged file (`git restore --staged`) |
+| `X` | **Restore / Clean** | Prompts confirmation, then restores modified/staged file (`git restore`) or cleans untracked file (`git clean`) |
+| `S` | **Stage All** | Stages all modified and untracked files (`git add -A`) |
+| `U` | **Unstage All** | Unstages all staged changes (`git restore --staged .`) |
+| `A` | **Add All (CWD)** | Stages all changes in current directory (`git add .`) |
+| `c` | **Commit Menu** | Enters the commit popup menu (`commit`) |
+| `v` | **Diff** | Drops to terminal shell running `git diff` for file (cached diff if staged) |
+| `d` | **Diff All (Unstaged)** | Drops to terminal shell running `git diff` for all files |
+| `D` | **Diff All (Staged)** | Drops to terminal shell running `git diff --cached` for all files |
+| `l` | **Git Log** | Drops to terminal shell running `git log` |
+| `r` | **Refresh** | Refreshes the Git status block in-place without altering other text |
+| `p` | **Preview** | Previews the target file in connected `preview` client |
+| `e` | **Edit** | Opens the file directly in Kakoune |
+| `q` | **Quit** | Closes the popup menu without performing any action |
+
+### Git Commit Popup (`commit`):
+Press `c` inside the Git action popup to enter the commit menu:
+- `c`: Run `git commit` in interactive terminal shell
+- `a`: Run `git commit -a` (commit all tracked changes) in terminal shell
+- `A`: Run `git commit --amend` in interactive terminal shell
+- `N`: Run `git commit --amend --no-edit` in interactive terminal shell
+- `q`: Quit popup menu
+
+---
+
 ## Smart Keybindings in Kiki Buffers (`filetype=kiki`):
 
 Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tree*`, `*kiki-topics-*`, or `*.kiki` files), normal mode keys act contextually without needing a leader prefix:
 
 | Key | Contextual Behavior |
 | :--- | :--- |
-| `<ret>` | Streams command (FIFO) / Opens file / Opens tree / Toggles tree folder / Opens topic |
-| `<tab>` | Executes inline / Opens file / Steps into folder / Opens topic |
+| `<ret>` | Streams command (FIFO) / Opens file / Opens tree / Toggles tree folder / Opens topic / Opens Git action popup |
+| `<tab>` | Executes inline / Opens file / Steps into folder / Rotates next Git status file (opens action popup) |
+| `<s-tab>` | Steps back in tree / Rotates previous Git status file (opens action popup) |
 | `O` | Smart open (FIFO on command, file tree on path, opens topic in list) |
 | `p` | Opens or updates buffer view in connected preview client (`preview`) |
 | `P` | Changes working directory to folder or file's parent directory |
@@ -274,7 +319,7 @@ Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tr
 | `<c-l>` | Moves up to parent folder in tree |
 | `*` | Recursively expands tree node |
 | `-` | Narrows/hides sibling folders in tree |
-| `r` | Refreshes directory node from disk |
+| `r` | Refreshes directory node or Git status block in-place |
 | `.` | Toggles hidden dotfiles in tree |
 | `q` | Closes buffer |
 
@@ -352,6 +397,7 @@ set-option global kiki_tree_show_hidden false
 | `f` | `kiki-fifo` | Stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell |
+| `g` | `kiki-git-status` | Stream git status into dedicated FIFO buffer |
 | `u` | `kiki-open-url` | Open URL from line or buffer in browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topics) |

@@ -10,11 +10,26 @@ define-command -override -params 0..1 \
 define-command -override -hidden -params 1 \
     kiki-topic-do %{ evaluate-commands %sh{
         raw="$1"
-        topic_raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*\$[[:space:]]*//' -e 's/^[[:space:]]*//' | awk '{print $1}')
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
+        raw="${raw#\$ }"
+        raw="${raw#\$}"
+        raw="${raw#> }"
+        raw="${raw#>}"
+        topic_raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | awk '{print $1}')
         topic_name=$(basename "$topic_raw" .kiki)
-        if [ -n "$topic_name" ] && [ "$topic_name" != "$" ]; then
+        if [ -n "$topic_name" ] && [ "$topic_name" != "$" ] && [ "$topic_name" != ">" ]; then
+            topics_dir="$kak_opt_kiki_topics"
+            case "$topics_dir" in
+                "~"/*) topics_dir="${HOME}/${topics_dir#"~"/}" ;;
+                "~") topics_dir="${HOME}" ;;
+            esac
+            topics_dir="${topics_dir%/}/"
+            mkdir -p "$topics_dir"
             printf 'execute-keys %%{;}\n'
-            printf 'edit "%s%s.kiki"\n' "$kak_opt_kiki_topics" "$topic_name"
+            printf 'edit %%{%s%s.kiki}\n' "$topics_dir" "$topic_name"
         else
             printf 'execute-keys %%{;}\n'
             printf 'echo -markup "{Error}kiki-topic: no topic name found on line"\n'
@@ -32,6 +47,9 @@ define-command -override -hidden -params 1 \
     kiki-cd-do %{ evaluate-commands %sh{
         raw="$1"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
         raw="${raw#\$ }"
         raw="${raw#\$}"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -73,6 +91,9 @@ define-command -override -hidden -params 1 \
     kiki-drop-to-shell-do %{ evaluate-commands %sh{
         raw="$1"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
         raw="${raw#\$ }"
         raw="${raw#\$}"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -101,13 +122,88 @@ define-command -override -hidden -params 1 \
         printf 'change-directory %%{%s}\n' "$target_dir"
         printf 'echo "kiki: opened shell in %s"\n' "$target_dir"
 
+        user_shell=""
+        if [ -n "$kak_opt_kiki_shell" ] && command -v "$kak_opt_kiki_shell" >/dev/null 2>&1; then
+            user_shell="$kak_opt_kiki_shell"
+        fi
+
+        # Inspect ancestor processes of Kakoune client/server
+        if [ -z "$user_shell" ]; then
+            target_pid="${kak_client_pid:-$$}"
+            while [ "$target_pid" -gt 1 ] 2>/dev/null; do
+                if [ -f "/proc/$target_pid/comm" ]; then
+                    comm=$(cat "/proc/$target_pid/comm" 2>/dev/null)
+                    case "$comm" in
+                        *fish*|*zsh*|*bash*|*nu*|*elvish*|*tcsh*|*csh*|*ksh*|*dash*|*yash*|*ion*|*xonsh*)
+                            if [ -L "/proc/$target_pid/exe" ]; then
+                                exe_path=$(readlink -f "/proc/$target_pid/exe" 2>/dev/null)
+                                [ -x "$exe_path" ] && user_shell="$exe_path" && break
+                            fi
+                            if command -v "$comm" >/dev/null 2>&1; then
+                                user_shell=$(command -v "$comm")
+                                break
+                            fi
+                            ;;
+                    esac
+                elif command -v ps >/dev/null 2>&1; then
+                    comm=$(ps -p "$target_pid" -o comm= 2>/dev/null)
+                    case "$comm" in
+                        *fish*|*zsh*|*bash*|*nu*|*elvish*|*tcsh*|*csh*|*ksh*|*dash*|*yash*|*ion*|*xonsh*)
+                            if command -v "$comm" >/dev/null 2>&1; then
+                                user_shell=$(command -v "$comm")
+                                break
+                            fi
+                            ;;
+                    esac
+                fi
+                if [ -f "/proc/$target_pid/status" ]; then
+                    target_pid=$(awk '/PPid:/ {print $2}' "/proc/$target_pid/status" 2>/dev/null)
+                elif command -v ps >/dev/null 2>&1; then
+                    target_pid=$(ps -p "$target_pid" -o ppid= 2>/dev/null | tr -d ' ')
+                else
+                    break
+                fi
+            done
+        fi
+
+        # Check environment variable $SHELL
+        if [ -z "$user_shell" ] && [ -n "$SHELL" ] && [ -x "$SHELL" ]; then
+            user_shell="$SHELL"
+        fi
+
+        # Check system user database
+        if [ -z "$user_shell" ]; then
+            db_shell=""
+            if command -v getent >/dev/null 2>&1 && [ -n "$USER" ]; then
+                db_shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)
+            elif [ -f /etc/passwd ] && [ -n "$USER" ]; then
+                db_shell=$(awk -F: -v u="$USER" '$1==u {print $7}' /etc/passwd 2>/dev/null)
+            elif command -v dscl >/dev/null 2>&1 && [ -n "$USER" ]; then
+                db_shell=$(dscl . -read /Users/"$USER" UserShell 2>/dev/null | awk '{print $2}')
+            fi
+            if [ -n "$db_shell" ] && [ -x "$db_shell" ]; then
+                user_shell="$db_shell"
+            fi
+        fi
+
+        # Fallback to available common shells or sh
+        if [ -z "$user_shell" ]; then
+            for sh_candidate in zsh fish bash sh; do
+                if command -v "$sh_candidate" >/dev/null 2>&1; then
+                    user_shell=$(command -v "$sh_candidate")
+                    break
+                fi
+            done
+        fi
+        [ -z "$user_shell" ] && user_shell="/bin/sh"
+
         tmp_script=$(mktemp "${TMPDIR:-/tmp}"/kiki-drop-shell.XXXXXXXX)
         chmod +x "$tmp_script"
         cat << EOF > "$tmp_script"
 #!/bin/sh
 trap 'rm -f "\$0"' EXIT
 cd "$target_dir" || exit 1
-exec "\${SHELL:-sh}"
+exec "$user_shell"
 EOF
         printf 'kiki-spawn-terminal "%s"\n' "$tmp_script"
     }}
@@ -122,8 +218,11 @@ define-command -override -params 0..1 \
 define-command -override -hidden -params 1 \
     kiki-edit-do %{ evaluate-commands %sh{
         raw="$1"
-        # Strip leading/trailing whitespace and optional $ prefix
+        # Strip leading/trailing whitespace and optional prefix
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
         raw="${raw#\$ }"
         raw="${raw#\$}"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -201,6 +300,9 @@ define-command -override -hidden -params 1 \
     kiki-ls-do %{ evaluate-commands %sh{
         raw="$1"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
         raw="${raw#\$ }"
         raw="${raw#\$}"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -226,27 +328,33 @@ define-command -override -hidden -params 1 \
 # List available topic files
 define-command -override -docstring "kiki-list-topics: list all available topic files" \
     kiki-list-topics %{ evaluate-commands %sh{
-        topics_dir=$(eval echo "$kak_opt_kiki_topics")
+        topics_dir="$kak_opt_kiki_topics"
         case "$topics_dir" in
             "~"/*) topics_dir="${HOME}/${topics_dir#"~"/}" ;;
             "~") topics_dir="${HOME}" ;;
         esac
+        topics_dir="${topics_dir%/}"
         if [ -d "$topics_dir" ]; then
             timestamp=$(date +%H%M%S)
             buffer_name="*kiki-topics-${timestamp}*"
-            printf 'edit -scratch %s\n' "$buffer_name"
-            printf 'set-option buffer kiki_buffer_type topics\n'
-            printf 'kiki-set-modeline topics\n'
-            printf 'execute-keys "i"\n'
-            printf 'execute-keys "Available kiki topics:\n\n"\n'
-            for file in "$topics_dir"/*.kiki; do
-                if [ -f "$file" ]; then
-                    basename=$(basename "$file" .kiki)
-                    printf 'execute-keys "%s%s\n"\n' "$kak_opt_kiki_prefix" "$basename"
-                fi
-            done
-            printf 'execute-keys "<esc>"\n'
+            tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-topics.XXXXXXXX)
+            {
+                printf "Available kiki topics:\n\n"
+                for file in "$topics_dir"/*.kiki; do
+                    if [ -f "$file" ]; then
+                        bname=$(basename "$file" .kiki)
+                        printf "%s%s\n" "$kak_opt_kiki_prefix" "$bname"
+                    fi
+                done
+            } > "$tmp_file"
+            printf 'edit -scratch %%{%s}\n' "$buffer_name"
+            printf 'set-option buffer filetype kiki\n'
+            printf 'set-option buffer kiki_buffer_type kiki-buffer\n'
+            printf 'kiki-set-modeline kiki-buffer\n'
+            printf 'execute-keys %%{<percent>|cat "%s"<ret>}\n' "$tmp_file"
+            printf 'select 1.1,1.1\n'
+            printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_file"
         else
-            printf 'echo "Topics directory does not exist: %s"\n' "$topics_dir"
+            printf 'echo -markup "{Error}Topics directory does not exist: %s"\n' "$topics_dir"
         fi
     }}

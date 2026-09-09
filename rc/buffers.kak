@@ -1,39 +1,48 @@
-# Kiki Buffer Lifecycle & Management
-
-# Set buffer type for .kiki files
+# Set unified kiki-buffer type and kiki filetype for all kiki files and scratch buffers
 hook -group kiki global BufOpenFile .*\.kiki$ %{
-    set-option buffer kiki_buffer_type file
+    set-option buffer kiki_buffer_type kiki-buffer
     set-option buffer filetype kiki
 }
 
-hook -group kiki global BufCreate \*kiki-scratchpad.*\* %{
-    set-option buffer kiki_buffer_type scratchpad
+hook -group kiki global BufOpenFile .*\.kikitree$ %{
+    set-option buffer kiki_buffer_type kiki-buffer
+    set-option buffer filetype kiki
+}
+
+hook -group kiki global BufCreate \*kiki-.*\* %{
+    set-option buffer kiki_buffer_type kiki-buffer
     set-option buffer filetype kiki
 }
 
 hook -group kiki global BufSetOption filetype=kiki %{
-    map buffer normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command on command line, or expand/collapse on tree line'
+    map buffer normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command in FIFO, open file/folder, or toggle tree'
     map buffer normal <c-o> ':kiki-smart-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
-    map buffer normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
+    map buffer normal O ':kiki-smart-open<ret>' -docstring 'Open topic if topic list, file tree if path, or fifo if command'
+    map buffer normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Execute command inline, open file/folder, or step into tree'
+    map buffer normal P ':kiki-smart-cd<ret>' -docstring 'Change directory to folder path or parent of file path'
     map buffer normal <c-l> ':kiki-smart-parent<ret>' -docstring 'Move to parent folder'
     map buffer normal r ':kiki-smart-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
     map buffer normal * ':kiki-smart-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map buffer normal <minus> ':kiki-smart-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map buffer normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
     map buffer normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
+    map buffer normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
 hook -group kiki global WinSetOption filetype=kiki %{
-    kiki-set-modeline kiki
-    map window normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command on command line, or expand/collapse on tree line'
+    kiki-set-modeline kiki-buffer
+    map window normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command in FIFO, open file/folder, or toggle tree'
     map window normal <c-o> ':kiki-smart-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
-    map window normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
+    map window normal O ':kiki-smart-open<ret>' -docstring 'Open topic if topic list, file tree if path, or fifo if command'
+    map window normal <tab> ':kiki-smart-step-into<ret>' -docstring 'Execute command inline, open file/folder, or step into tree'
+    map window normal P ':kiki-smart-cd<ret>' -docstring 'Change directory to folder path or parent of file path'
     map window normal <c-l> ':kiki-smart-parent<ret>' -docstring 'Move to parent folder'
     map window normal r ':kiki-smart-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
     map window normal * ':kiki-smart-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map window normal <minus> ':kiki-smart-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map window normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
     map window normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
+    map window normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
 # Smart line dispatcher for kiki buffers:
@@ -42,16 +51,179 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
-            if [ -n "$kak_opt_kiki_prefix" ] && [ "${trimmed#"$kak_opt_kiki_prefix"}" != "$trimmed" ]; then
-                target_cmd="kiki-inline"
-            elif printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
-                target_cmd="kiki-tree-open"
-            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
-                target_cmd="kiki-tree-open"
-            else
-                target_cmd="execute-keys <ret>"
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Topic list buffer (*kiki-topics-*)
+            case "$kak_bufname" in
+                \*kiki-topics-*)
+                    if [ -n "$trimmed" ] && [ "$trimmed" != "Available kiki topics:" ]; then
+                        printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                        exit 0
+                    fi
+                    ;;
+            esac
+
+            # 2. Topic header line (> topic) or explicit <name>.kiki
+            if printf "%s\n" "$trimmed" | grep -Eq "^>[[:space:]]*[a-zA-Z0-9_.-]+"; then
+                printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+
+            if printf "%s\n" "$trimmed" | grep -Eq '^[a-zA-Z0-9_.-]+\.kiki$'; then
+                printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
+            fi
+
+            # 3. Prompt lines ($ ...)
+            if [ -n "$kak_opt_kiki_prefix" ] && [ "${trimmed#"$kak_opt_kiki_prefix"}" != "$trimmed" ]; then
+                stripped="${trimmed#"$kak_opt_kiki_prefix"}"
+            elif printf "%s\n" "$trimmed" | grep -Eq '^\$[[:space:]]'; then
+                stripped="${trimmed#\$ }"
+            else
+                stripped=""
+            fi
+
+            if [ -n "$stripped" ]; then
+                p_check=$(printf "%s\n" "$stripped" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+                p_clean=$(printf "%s\n" "$p_check" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                p_path_only=$(printf "%s\n" "$p_clean" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+                case "$p_clean" in
+                    "~"/*) p_exp="${HOME}/${p_clean#"~"/}" ;;
+                    "~") p_exp="${HOME}" ;;
+                    *) p_exp="$p_clean" ;;
+                esac
+                case "$p_path_only" in
+                    "~"/*) p_path_exp="${HOME}/${p_path_only#"~"/}" ;;
+                    "~") p_path_exp="${HOME}" ;;
+                    *) p_path_exp="$p_path_only" ;;
+                esac
+
+                if [ -d "$p_exp" ] || [ -d "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-file-tree }\n' "$eval_cmd"
+                elif [ -f "$p_exp" ] || [ -f "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-edit }\n' "$eval_cmd"
+                else
+                    printf '%s %%{ kiki-fifo }\n' "$eval_cmd"
+                fi
+                exit 0
+            fi
+
+            # 4. Tree node (+ dir/ or - file) or filesystem path
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-open }\n' "$eval_cmd"
+                exit 0
+            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-tree-open }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 5. Check if current word/URI is an existing path
+            uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
+            case "$uri" in
+                "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
+                "~") uri_exp="${HOME}" ;;
+                *) uri_exp="$uri" ;;
+            esac
+            if [ -d "$uri_exp" ]; then
+                printf '%s %%{ kiki-tree-open }\n' "$eval_cmd"
+                exit 0
+            elif [ -f "$uri_exp" ]; then
+                printf '%s %%{ kiki-edit }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 6. Fallback: native Kakoune ret key
+            printf '%s %%{ execute-keys <ret> }\n' "$eval_cmd"
+        }
+    }}
+
+define-command -override -hidden \
+    kiki-smart-open %{ evaluate-commands -draft %{
+        execute-keys "<esc>x"
+        evaluate-commands %sh{
+            trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Topic list buffer (*kiki-topics-*) or topic header line (> topic) or explicit <name>.kiki
+            case "$kak_bufname" in
+                \*kiki-topics-*)
+                    if [ -n "$trimmed" ] && [ "$trimmed" != "Available kiki topics:" ]; then
+                        printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                        exit 0
+                    fi
+                    ;;
+            esac
+
+            if printf "%s\n" "$trimmed" | grep -Eq "^>[[:space:]]*[a-zA-Z0-9_.-]+"; then
+                printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
+            fi
+
+            if printf "%s\n" "$trimmed" | grep -Eq '^[a-zA-Z0-9_.-]+\.kiki$'; then
+                printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
+            fi
+
+            # 2. Command prefix line ($ ...)
+            if [ -n "$kak_opt_kiki_prefix" ] && [ "${trimmed#"$kak_opt_kiki_prefix"}" != "$trimmed" ]; then
+                stripped="${trimmed#"$kak_opt_kiki_prefix"}"
+            elif printf "%s\n" "$trimmed" | grep -Eq '^\$[[:space:]]'; then
+                stripped="${trimmed#\$ }"
+            else
+                stripped=""
+            fi
+
+            if [ -n "$stripped" ]; then
+                # Check if stripped line is an existing file or directory path
+                p_check=$(printf "%s\n" "$stripped" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+                p_clean=$(printf "%s\n" "$p_check" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                p_path_only=$(printf "%s\n" "$p_clean" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+                case "$p_clean" in
+                    "~"/*) p_exp="${HOME}/${p_clean#"~"/}" ;;
+                    "~") p_exp="${HOME}" ;;
+                    *) p_exp="$p_clean" ;;
+                esac
+                case "$p_path_only" in
+                    "~"/*) p_path_exp="${HOME}/${p_path_only#"~"/}" ;;
+                    "~") p_path_exp="${HOME}" ;;
+                    *) p_path_exp="$p_path_only" ;;
+                esac
+
+                if [ -d "$p_exp" ] || [ -d "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-file-tree }\n' "$eval_cmd"
+                elif [ -f "$p_exp" ] || [ -f "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-edit }\n' "$eval_cmd"
+                else
+                    printf '%s %%{ kiki-fifo }\n' "$eval_cmd"
+                fi
+                exit 0
+            fi
+
+            # 3. File or Folder / Tree node (+ dir/ or - file) or filesystem path
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-file-tree }\n' "$eval_cmd"
+                exit 0
+            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-file-tree }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 4. Check if current word/URI is an existing path
+            uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
+            case "$uri" in
+                "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
+                "~") uri_exp="${HOME}" ;;
+                *) uri_exp="$uri" ;;
+            esac
+            if [ -d "$uri_exp" ] || [ -f "$uri_exp" ]; then
+                printf '%s %%{ kiki-file-tree }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 5. Fallback: native Kakoune O key
+            printf '%s %%{ execute-keys O }\n' "$eval_cmd"
         }
     }}
 
@@ -60,12 +232,14 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
                 target_cmd="kiki-tree-open"
             else
                 target_cmd="execute-keys <c-o>"
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+            printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
         }
     }}
 
@@ -74,12 +248,170 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
-            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
-                target_cmd="kiki-tree-step-into"
-            else
-                target_cmd="execute-keys <tab>"
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Topic list buffer (*kiki-topics-*)
+            case "$kak_bufname" in
+                \*kiki-topics-*)
+                    if [ -n "$trimmed" ] && [ "$trimmed" != "Available kiki topics:" ]; then
+                        printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                        exit 0
+                    fi
+                    ;;
+            esac
+
+            # 2. Topic header line (> topic) or explicit <name>.kiki
+            if printf "%s\n" "$trimmed" | grep -Eq "^>[[:space:]]*[a-zA-Z0-9_.-]+"; then
+                printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+
+            if printf "%s\n" "$trimmed" | grep -Eq '^[a-zA-Z0-9_.-]+\.kiki$'; then
+                printf '%s %%{ kiki-topic-do %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
+            fi
+
+            # 3. Prompt lines ($ ...)
+            if [ -n "$kak_opt_kiki_prefix" ] && [ "${trimmed#"$kak_opt_kiki_prefix"}" != "$trimmed" ]; then
+                stripped="${trimmed#"$kak_opt_kiki_prefix"}"
+            elif printf "%s\n" "$trimmed" | grep -Eq '^\$[[:space:]]'; then
+                stripped="${trimmed#\$ }"
+            else
+                stripped=""
+            fi
+
+            if [ -n "$stripped" ]; then
+                p_check=$(printf "%s\n" "$stripped" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+                p_clean=$(printf "%s\n" "$p_check" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                p_path_only=$(printf "%s\n" "$p_clean" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+                case "$p_clean" in
+                    "~"/*) p_exp="${HOME}/${p_clean#"~"/}" ;;
+                    "~") p_exp="${HOME}" ;;
+                    *) p_exp="$p_clean" ;;
+                esac
+                case "$p_path_only" in
+                    "~"/*) p_path_exp="${HOME}/${p_path_only#"~"/}" ;;
+                    "~") p_path_exp="${HOME}" ;;
+                    *) p_path_exp="$p_path_only" ;;
+                esac
+
+                if [ -d "$p_exp" ] || [ -d "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-file-tree }\n' "$eval_cmd"
+                elif [ -f "$p_exp" ] || [ -f "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-edit }\n' "$eval_cmd"
+                else
+                    printf '%s %%{ kiki-inline }\n' "$eval_cmd"
+                fi
+                exit 0
+            fi
+
+            # 4. Tree node (+ dir/ or - file) or filesystem path
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
+                exit 0
+            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 5. Check if current word/URI is an existing path
+            uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
+            case "$uri" in
+                "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
+                "~") uri_exp="${HOME}" ;;
+                *) uri_exp="$uri" ;;
+            esac
+            if [ -d "$uri_exp" ]; then
+                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
+                exit 0
+            elif [ -f "$uri_exp" ]; then
+                printf '%s %%{ kiki-edit }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 6. Fallback: native Kakoune tab key
+            printf '%s %%{ execute-keys <tab> }\n' "$eval_cmd"
+        }
+    }}
+
+define-command -override -hidden \
+    kiki-smart-cd %{ evaluate-commands -draft %{
+        execute-keys "<esc>x"
+        evaluate-commands %sh{
+            trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Tree buffer (*kiki-file-tree* / *.kikitree) or tree node lines (+ dir/ or - file)
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-resolve-path kiki-cd-do }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-resolve-path kiki-cd-do }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 2. Prompt lines ($ ...)
+            if [ -n "$kak_opt_kiki_prefix" ] && [ "${trimmed#"$kak_opt_kiki_prefix"}" != "$trimmed" ]; then
+                stripped="${trimmed#"$kak_opt_kiki_prefix"}"
+            elif printf "%s\n" "$trimmed" | grep -Eq '^\$[[:space:]]'; then
+                stripped="${trimmed#\$ }"
+            else
+                stripped=""
+            fi
+
+            if [ -n "$stripped" ]; then
+                p_check=$(printf "%s\n" "$stripped" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+                p_clean=$(printf "%s\n" "$p_check" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                p_path_only=$(printf "%s\n" "$p_clean" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+                case "$p_clean" in
+                    "~"/*) p_exp="${HOME}/${p_clean#"~"/}" ;;
+                    "~") p_exp="${HOME}" ;;
+                    *) p_exp="$p_clean" ;;
+                esac
+                case "$p_path_only" in
+                    "~"/*) p_path_exp="${HOME}/${p_path_only#"~"/}" ;;
+                    "~") p_path_exp="${HOME}" ;;
+                    *) p_path_exp="$p_path_only" ;;
+                esac
+
+                if [ -d "$p_exp" ] || [ -d "$p_path_exp" ] || [ -f "$p_exp" ] || [ -f "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-cd-do %%{%s} }\n' "$eval_cmd" "$p_clean"
+                    exit 0
+                fi
+            fi
+
+            # 3. Plain filesystem path on line (~/..., /..., ./..., ../...)
+            if printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                p_clean=$(printf "%s\n" "$trimmed" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                printf '%s %%{ kiki-cd-do %%{%s} }\n' "$eval_cmd" "$p_clean"
+                exit 0
+            fi
+
+            # 4. Check if current word/URI is an existing path
+            uri=$(printf "%s\n" "$trimmed" | awk '{print $1}' | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+            uri_path_only=$(printf "%s\n" "$uri" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+            case "$uri" in
+                "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
+                "~") uri_exp="${HOME}" ;;
+                *) uri_exp="$uri" ;;
+            esac
+            case "$uri_path_only" in
+                "~"/*) uri_path_exp="${HOME}/${uri_path_only#"~"/}" ;;
+                "~") uri_path_exp="${HOME}" ;;
+                *) uri_path_exp="$uri_path_only" ;;
+            esac
+            if [ -d "$uri_exp" ] || [ -d "$uri_path_exp" ] || [ -f "$uri_exp" ] || [ -f "$uri_path_exp" ]; then
+                printf '%s %%{ kiki-cd-do %%{%s} }\n' "$eval_cmd" "$uri"
+                exit 0
+            fi
+
+            # 5. Fallback: native Kakoune P key
+            printf '%s %%{ execute-keys P }\n' "$eval_cmd"
         }
     }}
 
@@ -88,12 +420,14 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
                 target_cmd="kiki-tree-parent"
             else
                 target_cmd="execute-keys <c-l>"
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+            printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
         }
     }}
 
@@ -102,12 +436,14 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
                 target_cmd="kiki-tree-refresh"
             else
                 target_cmd="execute-keys r"
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+            printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
         }
     }}
 
@@ -116,12 +452,14 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
                 target_cmd="kiki-tree-toggle-hidden"
             else
                 target_cmd="execute-keys ."
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+            printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
         }
     }}
 
@@ -130,12 +468,14 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
                 target_cmd="kiki-tree-expand-recursive"
             else
                 target_cmd="execute-keys *"
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+            printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
         }
     }}
 
@@ -144,12 +484,14 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
                 target_cmd="kiki-tree-narrow"
             else
                 target_cmd="execute-keys <minus>"
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+            printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
         }
     }}
 
@@ -158,13 +500,91 @@ define-command -override -hidden \
         execute-keys "<esc>x"
         evaluate-commands %sh{
             trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
-            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
-                target_cmd="kiki-tree-drop-to-shell"
-            else
-                target_cmd="execute-keys D"
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Tree buffer (*kiki-file-tree* / *.kikitree) or tree node lines (+ dir/ or - file)
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-drop-to-shell }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-drop-to-shell }\n' "$eval_cmd"
+                exit 0
             fi
-            printf 'evaluate-commands -client %%val{client} %s\n' "$target_cmd"
+
+            # 2. Prompt lines ($ ...)
+            if [ -n "$kak_opt_kiki_prefix" ] && [ "${trimmed#"$kak_opt_kiki_prefix"}" != "$trimmed" ]; then
+                stripped="${trimmed#"$kak_opt_kiki_prefix"}"
+            elif printf "%s\n" "$trimmed" | grep -Eq '^\$[[:space:]]'; then
+                stripped="${trimmed#\$ }"
+            else
+                stripped=""
+            fi
+
+            if [ -n "$stripped" ]; then
+                p_check=$(printf "%s\n" "$stripped" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+                p_clean=$(printf "%s\n" "$p_check" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                p_path_only=$(printf "%s\n" "$p_clean" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+                case "$p_clean" in
+                    "~"/*) p_exp="${HOME}/${p_clean#"~"/}" ;;
+                    "~") p_exp="${HOME}" ;;
+                    *) p_exp="$p_clean" ;;
+                esac
+                case "$p_path_only" in
+                    "~"/*) p_path_exp="${HOME}/${p_path_only#"~"/}" ;;
+                    "~") p_path_exp="${HOME}" ;;
+                    *) p_path_exp="$p_path_only" ;;
+                esac
+
+                if [ -d "$p_exp" ] || [ -d "$p_path_exp" ] || [ -f "$p_exp" ] || [ -f "$p_path_exp" ]; then
+                    printf '%s %%{ kiki-drop-to-shell-do %%{%s} }\n' "$eval_cmd" "$p_clean"
+                else
+                    printf '%s %%{ kiki-shell-do %%{%s} }\n' "$eval_cmd" "$stripped"
+                fi
+                exit 0
+            fi
+
+            # 3. Plain filesystem path on line (~/..., /..., ./..., ../...)
+            if printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                p_clean=$(printf "%s\n" "$trimmed" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                printf '%s %%{ kiki-drop-to-shell-do %%{%s} }\n' "$eval_cmd" "$p_clean"
+                exit 0
+            fi
+
+            # 4. Check if current word/URI is an existing path
+            uri=$(printf "%s\n" "$trimmed" | awk '{print $1}' | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+            uri_path_only=$(printf "%s\n" "$uri" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
+            case "$uri" in
+                "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
+                "~") uri_exp="${HOME}" ;;
+                *) uri_exp="$uri" ;;
+            esac
+            case "$uri_path_only" in
+                "~"/*) uri_path_exp="${HOME}/${uri_path_only#"~"/}" ;;
+                "~") uri_path_exp="${HOME}" ;;
+                *) uri_exp="$uri_path_only" ;;
+            esac
+            if [ -d "$uri_exp" ] || [ -d "$uri_path_exp" ] || [ -f "$uri_exp" ] || [ -f "$uri_path_exp" ]; then
+                printf '%s %%{ kiki-drop-to-shell-do %%{%s} }\n' "$eval_cmd" "$uri"
+                exit 0
+            fi
+
+            # 5. Fallback: run shell in current $PWD
+            printf '%s %%{ kiki-shell }\n' "$eval_cmd"
         }
+    }}
+
+# Smart close: for scratch/tree buffers, delete without prompt; for files, standard q
+define-command -override -hidden \
+    kiki-smart-close %{ evaluate-commands %sh{
+        case "$kak_bufname" in
+            \*kiki-*) printf 'delete-buffer\n' ;;
+            *.kikitree) printf 'delete-buffer\n' ;;
+            *) printf 'execute-keys q\n' ;;
+        esac
     }}
 
 # Open disposable quick scratchpad (*kiki-scratchpad-<timestamp>*)
@@ -174,13 +594,13 @@ define-command -override -docstring "kiki-scratchpad: open a disposable scratchp
             timestamp=$(date +%s%N | cut -b1-13)
             bufname="*kiki-scratchpad-${timestamp}*"
             printf 'edit -scratch %s\n' "$bufname"
-            printf 'set-option buffer kiki_buffer_type scratchpad\n'
+            printf 'set-option buffer kiki_buffer_type kiki-buffer\n'
             printf 'set-option buffer filetype kiki\n'
-            printf 'kiki-set-modeline kiki\n'
+            printf 'kiki-set-modeline kiki-buffer\n'
         }
     }
 
-# Helper to close kiki buffers by matching buffer type
+# Helper to close kiki buffers by matching buffer pattern or type
 define-command -override -hidden -params 0..1 \
     kiki-close-buffers-matching %{ evaluate-commands %sh{
         match_type="$1"
@@ -188,13 +608,41 @@ define-command -override -hidden -params 0..1 \
         for buffer do
             printf 'try %%{ evaluate-commands -buffer "%s" %%{
                 evaluate-commands %%sh{
-                    if [ -z "%s" ] && [ -n "$kak_opt_kiki_buffer_type" ]; then
-                        printf "delete-buffer\n"
-                    elif [ "$kak_opt_kiki_buffer_type" = "%s" ]; then
-                        printf "delete-buffer\n"
+                    if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ] || [ -n "$kak_opt_kiki_buffer_type" ]; then
+                        b_name="$kak_bufname"
+                        case "%s" in
+                            fifo)
+                                case "$b_name" in
+                                    \*kiki-fifo-*) printf "delete-buffer\n" ;;
+                                esac
+                                ;;
+                            topics)
+                                case "$b_name" in
+                                    \*kiki-topics-*) printf "delete-buffer\n" ;;
+                                esac
+                                ;;
+                            tree)
+                                case "$b_name" in
+                                    \*kiki-file-tree\*|*.kikitree) printf "delete-buffer\n" ;;
+                                esac
+                                ;;
+                            scratchpad|scratch)
+                                case "$b_name" in
+                                    \*kiki-scratchpad-*|*scratchpad.kiki|\*kiki-scratch\*) printf "delete-buffer\n" ;;
+                                esac
+                                ;;
+                            file)
+                                case "$b_name" in
+                                    *.kiki) printf "delete-buffer\n" ;;
+                                esac
+                                ;;
+                            *)
+                                printf "delete-buffer\n"
+                                ;;
+                        esac
                     fi
                 }
-            } }\n' "$buffer" "$match_type" "$match_type"
+            } }\n' "$buffer" "$match_type"
         done
     }}
 
@@ -226,6 +674,12 @@ define-command -override -docstring "kiki-close-tree-buffers: close all kiki fil
 define-command -override -docstring "kiki-close-scratchpad-buffers: close all kiki scratchpad buffers" \
     kiki-close-scratchpad-buffers %{
         kiki-close-buffers-matching scratchpad
+    }
+
+# Close scratch buffers
+define-command -override -docstring "kiki-close-scratch-buffers: close all kiki scratch buffers" \
+    kiki-close-scratch-buffers %{
+        kiki-close-buffers-matching scratch
     }
 
 # Close kiki file buffers

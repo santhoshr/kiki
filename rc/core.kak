@@ -90,11 +90,14 @@ define-command -override -hidden -params 2 \
 
 # Selection after prefix
 define-command -override -docstring "kiki-select: select all text after kiki prefix on current line" \
-    kiki-select %{
-        execute-keys "<esc>xs\$ .+<ret>"
-        execute-keys "s(?<=\$ ).+"
-        execute-keys '<ret>H'
-    }
+    kiki-select %{ evaluate-commands %sh{
+        prefix="$kak_opt_kiki_prefix"
+        [ -z "$prefix" ] && prefix='$ '
+        escaped_prefix=$(printf '%s' "$prefix" | sed 's/[][\/.^$*+?(){}|]/\\&/g')
+        printf 'execute-keys "<esc>xs%s.+<ret>"\n' "$escaped_prefix"
+        printf 'execute-keys "s(?<=%s).+"\n' "$escaped_prefix"
+        printf "execute-keys '<ret>H'\n"
+    }}
 
 # Select URI / path on line
 define-command -override -docstring "kiki-uri-select: select a uri/path on the current line" \
@@ -152,7 +155,7 @@ define-command -override -hidden -params 1.. \
             execute-keys "<esc>x"
             evaluate-commands %%sh{
                 trimmed=$(printf "%%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
-                if [ "$kak_opt_kiki_buffer_type" = "tree" ] || printf "%%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                if printf "%%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || [ "$kak_bufname" = "*kiki-file-tree*" ]; then
                     printf "evaluate-commands -client %%%%val{client} kiki-tree-resolve-path %%s\n" "%s"
                 else
                     printf "evaluate-commands -client %%%%val{client} %%%%{

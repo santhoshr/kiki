@@ -76,8 +76,19 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
 - **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` or `<c-o>`.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
-- **Arbitrary Path Exploration:** Users can type or paste any path (e.g. `~/.config/kak/` or `/var/log/`) on a new line and press `<ret>` to expand it alongside existing trees.
-- **Keybindings:** `<ret>` / `<c-o>` (toggle/open), `<tab>` (step-into folder / open file), `<c-l>` (move to parent folder), `*` (recursively expand tree), `-` (narrow unselected subtrees/siblings), `r` (refresh node in-place), `.` (toggle hidden dotfiles), `q` (delete buffer).
+- **Keybindings in Kiki Buffers:**
+  - `<ret>` / `<enter>`: Execute command via FIFO (`kiki-fifo`), open file tree on directories, open file on files, toggle expand/collapse in file tree, or open topic.
+  - `<tab>`: Execute command inline (`kiki-inline`), open file tree on directories / step into folder, open file on files, or open topic.
+  - `O`: Smart contextual open (topic in topic list, file tree if path, FIFO if command, fallback native `O`).
+  - `P`: Change directory to folder path or parent of file path (in prompt lines, tree lines, or path lines).
+  - `<c-o>`: Toggle directory expand/collapse or open file.
+  - `<c-l>`: Move up to parent folder.
+  - `*`: Recursively expand directory tree.
+  - `-`: Narrow unselected subtrees/siblings.
+  - `r`: Refresh directory node in-place.
+  - `.`: Toggle hidden dotfiles.
+  - `D`: Execute command in terminal shell (matching `,!`), or drop to shell in directory/path under cursor.
+  - `q`: Close/delete Kiki buffer.
 
 ---
 
@@ -126,8 +137,9 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 ```kak
 declare-option str kiki_prefix "$ "                      # Command prefix string
 declare-option str kiki_topics "~/.config/kak/kiki/"     # Topic files directory
-declare-option str kiki_buffer_type ""                   # Buffer category (file|fifo|scratch|topics|tree)
+declare-option str kiki_buffer_type ""                   # Buffer category, set to kiki-buffer for all kiki buffers
 declare-option bool kiki_tree_show_hidden false          # Show/hide dotfiles in file tree
+declare-option str kiki_shell ""                         # Custom shell for drop-to-shell (auto-detects zsh/fish/bash)
 ```
 
 ---

@@ -4,41 +4,22 @@ declare-option -docstring "Show hidden/dot files in kiki-file-tree" bool kiki_tr
 
 # Set buffer type and local hooks/keys for kiki-file-tree scratch buffers and tree files
 hook -group kiki global BufCreate \*kiki-file-tree\* %{
-    set-option buffer kiki_buffer_type tree
-    set-option buffer filetype kiki-tree
+    set-option buffer kiki_buffer_type kiki-buffer
+    set-option buffer filetype kiki
 }
 
 hook -group kiki global BufOpenFile .*\.kikitree$ %{
-    set-option buffer kiki_buffer_type tree
-    set-option buffer filetype kiki-tree
+    set-option buffer kiki_buffer_type kiki-buffer
+    set-option buffer filetype kiki
 }
 
 hook -group kiki global BufSetOption filetype=kiki-tree %{
-    set-option buffer kiki_buffer_type tree
-    map buffer normal <ret> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
-    map buffer normal <c-o> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
-    map buffer normal <tab> ':kiki-tree-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
-    map buffer normal <c-l> ':kiki-tree-parent<ret>' -docstring 'Move to parent folder'
-    map buffer normal r ':kiki-tree-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
-    map buffer normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
-    map buffer normal <minus> ':kiki-tree-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
-    map buffer normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
-    map buffer normal D ':kiki-tree-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
-    map buffer normal q ':delete-buffer<ret>' -docstring 'Close tree view'
+    set-option buffer kiki_buffer_type kiki-buffer
+    set-option buffer filetype kiki
 }
 
 hook -group kiki global WinSetOption filetype=kiki-tree %{
-    kiki-set-modeline tree
-    map window normal <ret> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
-    map window normal <c-o> ':kiki-tree-open<ret>' -docstring 'Toggle directory expand/collapse or open file'
-    map window normal <tab> ':kiki-tree-step-into<ret>' -docstring 'Step into folder path and load subfolder or open file'
-    map window normal <c-l> ':kiki-tree-parent<ret>' -docstring 'Move to parent folder'
-    map window normal r ':kiki-tree-refresh<ret>' -docstring 'Refresh directory under cursor in-place'
-    map window normal * ':kiki-tree-expand-recursive<ret>' -docstring 'Expand directory recursively'
-    map window normal <minus> ':kiki-tree-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
-    map window normal . ':kiki-tree-toggle-hidden<ret>' -docstring 'Toggle hidden files'
-    map window normal D ':kiki-tree-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
-    map window normal q ':delete-buffer<ret>' -docstring 'Close tree view'
+    kiki-set-modeline kiki-buffer
 }
 
 # Main command to open file tree
@@ -51,8 +32,11 @@ define-command -override -params 0..1 \
 define-command -override -hidden -params 1 \
     kiki-file-tree-do %{ evaluate-commands %sh{
         raw="$1"
-        # Strip leading/trailing whitespace and optional $ prefix
+        # Strip leading/trailing whitespace and optional prefix
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$kak_opt_kiki_prefix" ]; then
+            raw="${raw#"$kak_opt_kiki_prefix"}"
+        fi
         raw="${raw#\$ }"
         raw="${raw#\$}"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -79,8 +63,9 @@ define-command -override -hidden -params 1 \
 
         bufname="*kiki-file-tree*"
         printf 'edit -scratch %s\n' "$bufname"
-        printf 'set-option buffer kiki_buffer_type tree\n'
-        printf 'set-option buffer filetype kiki-tree\n'
+        printf 'set-option buffer kiki_buffer_type kiki-buffer\n'
+        printf 'set-option buffer filetype kiki\n'
+        printf 'kiki-set-modeline kiki-buffer\n'
 
         tmp_content=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree.XXXXXXXX)
         target_dir_clean="${target_dir%/}/"

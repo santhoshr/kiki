@@ -12,7 +12,8 @@ try %{ declare-user-mode kiki-delete }
 # -------
 declare-option str kiki_prefix "$ "
 declare-option -docstring "Directory containing kiki topic files" str kiki_topics "~/.config/kak/kiki/"
-declare-option str kiki_buffer_type ""
+declare-option -docstring "Buffer category, set to kiki-buffer for all kiki buffers" str kiki_buffer_type ""
+declare-option -docstring "Custom interactive shell for kiki drop-to-shell (defaults to auto-detected user shell)" str kiki_shell ""
 
 ##
 # Load Modules

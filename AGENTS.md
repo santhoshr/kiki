@@ -71,6 +71,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - Formats: `file:line`, `file:line:col`, `file:line:match_text` (e.g. `MacApps:52:Stapler.app`, `src/main.rs:12:4:let x = 1;`).
 - Resolves relative paths, absolute paths, and tilde `~`.
 - **Topic Fallback:** If the file does not exist in CWD, automatically checks `$kak_opt_kiki_topics/<name>.kiki`.
+- **kiki-cd-do Fallback:** Changes directory to the path under cursor/prompt. On normal non-directory lines, automatically falls back to changing directory to the current buffer's parent directory (`dirname "$kak_buffile"`), or does nothing if the buffer is unsaved.
 
 ### E. Interactive Multi-Root File Tree (`rc/tree.kak`)
 - **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
@@ -117,7 +118,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `p` | `kiki-preview` | Open or replace buffer in connected preview client |
 | `t` | `kiki-topic` | Open topic file by name (`<topic>.kiki`) |
 | `T` | `kiki-list-topics` | List available topic files in a scratch buffer |
-| `P` | `kiki-cd` | Change Kakoune working directory to path |
+| `P` | `kiki-cd` | Change directory to path, or buffer parent on normal lines |
 | `D` | `kiki-drop-to-shell` | Suspend Kakoune and drop to shell in selected directory |
 | `q` | `kiki-scratchpad` | Open disposable quick scratchpad (`*kiki-scratchpad-<timestamp>*`) |
 | `,` | — | Open quick scratchpad (`scratchpad.kiki`) |

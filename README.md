@@ -233,7 +233,7 @@ https://kakoune.org
 - **Preview in connected client (`<p>` or `:kiki-preview`):**
   Hover on a path or file tree item and press `<p>`. If a Kakoune client named `preview` (or `$toolsclient`) is connected to the session, it updates the view in that client instantly. If not, it spawns a new terminal window attached to your session.
 - **Change working directory (`<P>` or `P`):**
-  Changes Kakoune's working directory to the target folder or the parent folder of a file.
+  Changes Kakoune's working directory to the target folder or parent folder of a file path on the line. When invoked on a normal non-directory line (e.g. via popup `,P`), it automatically changes directory to the current buffer's parent directory (or does nothing if the buffer is unsaved).
 - **Drop to shell (`<D>`):**
   Suspends Kakoune and opens an interactive shell in the directory under cursor.
 
@@ -359,7 +359,7 @@ set-option global kiki_tree_show_hidden false
 | `p` | `kiki-preview` | Open or replace buffer in preview client |
 | `t` | `kiki-topic` | Open topic file by name (`<topic>.kiki`) |
 | `T` | `kiki-list-topics` | List available topic files in scratch buffer |
-| `P` | `kiki-cd` | Change Kakoune working directory to path |
+| `P` | `kiki-cd` | Change directory to path under cursor, or buffer parent on normal lines |
 | `D` | `kiki-drop-to-shell` | Drop to shell in selected directory |
 | `q` | `kiki-scratchpad` | Open disposable quick scratchpad |
 | `,` | — | Open persistent `scratchpad.kiki` |

@@ -53,6 +53,8 @@ define-command -override -hidden -params 1 \
         raw="${raw#\$ }"
         raw="${raw#\$}"
         raw=$(printf '%s\n' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        raw=$(printf '%s\n' "$raw" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+        raw=$(printf '%s\n' "$raw" | sed -e 's/:[0-9]\+:[0-9]\+.*$//' -e 's/:[0-9]\+.*$//' -e 's/:$//')
 
         # Expand ~
         case "$raw" in
@@ -61,22 +63,27 @@ define-command -override -hidden -params 1 \
             *) path="$raw" ;;
         esac
 
-        if [ -z "$path" ]; then
-            printf 'echo -markup "{Error}kiki-cd: no path found on line"\n'
-            exit 0
-        fi
-
         printf 'execute-keys %%{;}\n'
 
-        if [ -d "$path" ]; then
+        if [ -n "$path" ] && [ -d "$path" ]; then
             printf 'change-directory %%{%s}\n' "$path"
             printf 'echo "kiki: changed directory to %s"\n' "$path"
-        elif [ -f "$path" ]; then
+            exit 0
+        elif [ -n "$path" ] && [ -f "$path" ]; then
             dir=$(dirname "$path")
             printf 'change-directory %%{%s}\n' "$dir"
             printf 'echo "kiki: changed directory to %s"\n' "$dir"
-        else
-            printf 'change-directory %%{%s}\n' "$path"
+            exit 0
+        fi
+
+        # Fallback for non-directory lines: change directory to buffer parent if saved file exists
+        buf_file="$kak_buffile"
+        if [ -n "$buf_file" ] && [ -e "$buf_file" ]; then
+            dir=$(dirname "$buf_file")
+            if [ -d "$dir" ]; then
+                printf 'change-directory %%{%s}\n' "$dir"
+                printf 'echo "kiki: changed directory to %s"\n' "$dir"
+            fi
         fi
     }}
 

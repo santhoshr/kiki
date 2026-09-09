@@ -358,3 +358,65 @@ define-command -override -docstring "kiki-list-topics: list all available topic 
             printf 'echo -markup "{Error}Topics directory does not exist: %s"\n' "$topics_dir"
         fi
     }}
+
+# Open URL from line, prompt for multiple, or search buffer
+define-command -override -params 0..1 \
+    -docstring "kiki-open-url [<url>]: open URL from argument, line, prompt for multiple, or search buffer" \
+    kiki-open-url %{
+        evaluate-commands -save-regs 'lu' %{
+            execute-keys -draft 'x"ly'
+            execute-keys -draft '%"uy'
+            evaluate-commands %sh{
+                url_regex="https?://[a-zA-Z0-9./?=_%:&+#~()-]+"
+                browser="xdg-open"
+                if command -v xdg-open >/dev/null 2>&1; then
+                    browser="xdg-open"
+                elif command -v open >/dev/null 2>&1; then
+                    browser="open"
+                elif [ -n "$BROWSER" ]; then
+                    browser="$BROWSER"
+                fi
+
+                generate_prompt() {
+                    title="$1"
+                    urls="$2"
+                    escaped_urls=$(printf '%s' "$urls" | sed "s/'/''/g")
+                    printf "prompt -menu -shell-script-candidates %%{ printf '%%s\n' '%s' } \"%s\" %%{\n" "$escaped_urls" "$title"
+                    printf '    nop %%sh{ ( %s "$kak_text" ) >/dev/null 2>&1 < /dev/null & }\n' "$browser"
+                    printf '    echo -markup "{green}kiki: opened URL:{default} %%val{text}"\n'
+                    printf '}\n'
+                }
+
+                if [ $# -ge 1 ] && [ -n "$1" ]; then
+                    target_urls="$1"
+                    url_count=1
+                else
+                    target_urls=$(printf "%s\n" "$kak_reg_l" | grep -oE "$url_regex" | sort -u || true)
+                    url_count=$(printf "%s\n" "$target_urls" | grep -c . || true)
+                fi
+
+                if [ "$url_count" -eq 1 ]; then
+                    printf 'nop %%sh{ ( %s "%s" ) >/dev/null 2>&1 < /dev/null & }\n' "$browser" "$target_urls"
+                    printf 'echo -markup "{green}kiki: opened URL:{default} %s"\n' "$target_urls"
+                elif [ "$url_count" -gt 1 ]; then
+                    lines_selected=$(printf "%s" "$kak_reg_l" | grep -c "^" || true)
+                    if [ "$lines_selected" -gt 1 ]; then
+                        source_label="selection"
+                    else
+                        source_label="line"
+                    fi
+                    generate_prompt "Open URL (from $source_label):" "$target_urls"
+                else
+                    all_urls=$(printf "%s\n" "$kak_reg_u" | grep -oE "$url_regex" | sort -u || true)
+                    if [ -z "$all_urls" ]; then
+                        printf 'echo -markup "{Error}kiki: no URLs found in buffer"\n'
+                        exit 0
+                    fi
+                    generate_prompt "Open URL (from buffer):" "$all_urls"
+                fi
+            }
+        }
+    }
+
+define-command -override -docstring "open-url: alias for kiki-open-url" \
+    open-url %{ kiki-open-url %arg{@} }

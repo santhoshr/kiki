@@ -50,7 +50,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   4. Routes through `kiki-check-sudo` before calling the `-do` action.
 
 - **`kiki-path-dispatch <action-do> [<args>]`**:
-  1. Resolves path/URL from explicit arguments, active selection, `kiki-uri-select` regex, or current line.
+  1. Resolves path/location from explicit arguments, active selection, `kiki-path-select` regex, or current line.
   2. Passes cleaned path to navigation helpers (`kiki-edit-do`, `kiki-ls-do`, `kiki-cd-do`, `kiki-topic-do`).
 
 ### B. Standard Input (`stdin`) Decoupling
@@ -109,7 +109,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `f` | `kiki-fifo` | Asynchronously stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell in `$PWD` |
-| `Y` | `kiki-uri-select`| Select and yank URI / path on line |
+| `u` | `kiki-open-url` | Open URL from line or buffer in web browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor/selection |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topic files) |
 | `o` | `kiki-file-tree` | Open interactive collapsible file tree |

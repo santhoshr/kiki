@@ -28,11 +28,12 @@ for getting things done.
    - Step into subfolder as tree root (`<tab>`) and move up to parent folder (`<c-l>`).
    - Recursively expand subtrees (`*`) and narrow sibling subtrees (`-`).
    - In-place node refresh (`r`) and toggle hidden dotfiles (`.`).
- - **Filesystem & URI Navigation:**
+ - **Filesystem & URL Navigation:**
+   - Open URLs directly in default browser from line, selection, or buffer (`<u>` / `:open-url`).
    - Auto-detects paths, URLs, and compiler error locations (`file:line:col`).
    - `ls -alh` inline descriptor on path (`<l>`).
    - `:edit` file at path with automatic topic fallback (`<e>`).
-   - Change directory (`<p>`) and yank URI (`<Y>`).
+   - Change directory (`<p>`).
  - **Persistent Topic Notes & Scratchpads:**
    - Create and organize modular topic files in `~/.config/kak/kiki/` (`<t>` and `<T>`).
    - Persistent scratchpad (`<,>`) and disposable timestamped scratchpads (`<q>`).
@@ -207,7 +208,7 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 
 ---
 
-## Navigating your filesystem & URIs:
+## Navigating your filesystem & URLs:
 
 Kiki automatically detects file paths, URLs, compiler errors, and grep matches on the current line:
 
@@ -218,6 +219,8 @@ https://kakoune.org
 ~/.config/kak/kakrc
 ```
 
+- **Open URL (`<u>` or `:open-url`):**
+  Hover on any line with an HTTP/HTTPS URL and press `,u` to open it in your default web browser (`xdg-open` / `open` / `$BROWSER`). If multiple URLs exist on the line or in the buffer, Kiki opens a menu prompt to choose.
 - **`ls -alh` inline (`<l>`):**
   Hover your cursor on the line with the path and press `<l>` to print detailed file information inline.
   ```python
@@ -228,8 +231,6 @@ https://kakoune.org
   Hover on the path above and press `<e>`. Kiki opens the file directly, positioning the cursor at `line:col` if specified in compiler/grep format. If the file does not exist in `$PWD`, it automatically searches your topic notes.
 - **Change working directory (`<p>` or `P`):**
   Changes Kakoune's working directory to the target folder or the parent folder of a file.
-- **Select URI (`<Y>`):**
-  Selects and yanks the URI / path on the current line.
 - **Drop to shell (`<D>`):**
   Suspends Kakoune and opens an interactive shell in the directory under cursor.
 
@@ -346,7 +347,7 @@ set-option global kiki_tree_show_hidden false
 | `f` | `kiki-fifo` | Stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell |
-| `Y` | `kiki-uri-select`| Select and yank URI / path on line |
+| `u` | `kiki-open-url` | Open URL from line or buffer in browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topics) |
 | `o` | `kiki-file-tree` | Open interactive collapsible file tree |

@@ -42,8 +42,8 @@ map global kiki f ':kiki-fifo<ret>' -docstring 'Execute and pipe output to fifo.
 map global kiki b ':kiki-background<ret>' -docstring 'Execute in the background.'
 map global kiki '!' ':kiki-shell<ret>' -docstring 'Execute in terminal shell.'
 
-# File system navigation
-map global kiki Y ':kiki-uri-select<ret>y' -docstring 'Select and yank URI.'
+# File system & URL navigation
+map global kiki u ':kiki-open-url<ret>' -docstring 'Open URL from line or buffer.'
 map global kiki l ':kiki-ls<ret>' -docstring 'ls -al on path.'
 map global kiki e ':kiki-edit<ret>' -docstring 'Open file at path.'
 map global kiki o ':kiki-file-tree<ret>' -docstring 'Open file tree for directory.'

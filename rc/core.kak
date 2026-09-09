@@ -99,11 +99,13 @@ define-command -override -docstring "kiki-select: select all text after kiki pre
         printf "execute-keys '<ret>H'\n"
     }}
 
-# Select URI / path on line
-define-command -override -docstring "kiki-uri-select: select a uri/path on the current line" \
-    kiki-uri-select %{
+# Select path on line
+define-command -override -docstring "kiki-path-select: select a file path on the current line" \
+    kiki-path-select %{
         execute-keys "<esc>xs(~/[^\s:]*|/[^\s:]+|\./[^\s:]+|[a-zA-Z0-9_.-]+/[^\s:]+|[a-zA-Z0-9_.-]+\.[a-zA-Z0-9_-]+)(:[0-9]+)*\b<ret>"
     }
+
+define-command -override -hidden kiki-uri-select %{ kiki-path-select }
 
 # Command dispatcher: handles explicit args, active selection, or prefix line fallback with sudo check
 define-command -override -hidden -params 1.. \
@@ -133,7 +135,7 @@ define-command -override -hidden -params 1.. \
         }\n' "$action" "$action"
     }}
 
-# Path dispatcher: handles explicit args, active selection, tree line resolution, URI select, or line fallback
+# Path dispatcher: handles explicit args, active selection, tree line resolution, path select, or line fallback
 define-command -override -hidden -params 1.. \
     kiki-path-dispatch %{ evaluate-commands %sh{
         action="$1"
@@ -160,7 +162,7 @@ define-command -override -hidden -params 1.. \
                 else
                     printf "evaluate-commands -client %%%%val{client} %%%%{
                         try %%%%{
-                            kiki-uri-select
+                            kiki-path-select
                             %s %%%%val{selection}
                         } catch %%%%{
                             execute-keys %%%%{<esc>x}

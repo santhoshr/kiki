@@ -75,6 +75,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 ### E. Interactive Multi-Root File Tree (`rc/tree.kak`)
 - **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
 - **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` or `<c-o>`.
+- **Directory Trap:** A `RuntimeError` hook intercepts Kakoune's native `:edit <dir>` (*"is a directory"*) error and immediately launches `kiki-file-tree` on that directory.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Keybindings in Kiki Buffers:**
   - `<ret>` / `<enter>`: Execute command via FIFO (`kiki-fifo`), open file tree on directories, open file on files, toggle expand/collapse in file tree, or open topic.

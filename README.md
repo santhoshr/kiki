@@ -203,6 +203,8 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 - `D`: Drop into an interactive shell in the selected folder.
 - `q`: Close the file tree buffer.
 
+> **Tip:** You can also run `:edit /path/to/dir/` (or `:e .`) as usual. Kiki automatically catches Kakoune's directory error and opens the file tree for that folder.
+
 ---
 
 ## Navigating your filesystem & URIs:

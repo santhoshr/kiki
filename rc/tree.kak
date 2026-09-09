@@ -22,6 +22,22 @@ hook -group kiki global WinSetOption filetype=kiki-tree %{
     kiki-set-modeline kiki-buffer
 }
 
+# Automatically open kiki-file-tree when kakoune attempts to :edit a directory
+hook -group kiki-tree-trap global RuntimeError '.*: is a directory' %{
+    evaluate-commands %sh{
+        raw="$kak_hook_param"
+        path=$(printf '%s\n' "$raw" | sed -n -e "s/.*'edit':[[:space:]]*\(.*\):[[:space:]]*is a directory/\1/p" -e "s/.*:[[:space:]]*\(.*\):[[:space:]]*is a directory/\1/p" | head -n 1)
+        path=$(printf '%s\n' "$path" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+        case "$path" in
+            "~"/*) path="${HOME}/${path#"~"/}" ;;
+            "~") path="${HOME}" ;;
+        esac
+        if [ -n "$path" ] && [ -d "$path" ]; then
+            printf 'kiki-file-tree %%{%s}\n' "$path"
+        fi
+    }
+}
+
 # Main command to open file tree
 define-command -override -params 0..1 \
     -docstring "kiki-file-tree [<dir>]: open interactive file tree for directory" \

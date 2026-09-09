@@ -87,6 +87,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `-`: Narrow unselected subtrees/siblings.
   - `r`: Refresh directory node in-place.
   - `.`: Toggle hidden dotfiles.
+  - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
   - `D`: Execute command in terminal shell (matching `,!`), or drop to shell in directory/path under cursor.
   - `q`: Close/delete Kiki buffer.
 
@@ -100,7 +101,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | :--- | :--- | :--- |
 | `c` | — | Insert `kiki_prefix` (`$ `) at cursor position |
 | `C` | — | Prefix current line with `kiki_prefix` (`I$ `) |
-| `<a-c>` | — | Create a new command line below and enter insert mode |
+| `<a-c>` | `kiki-smart-new-command` | Insert `kiki_prefix` into current or next empty line |
 | `y` | `kiki-select` | Select and yank command text after prefix |
 | `i` | `kiki-inline` | Execute command and insert pre-selected output below |
 | `s` | `kiki-scratch` | Execute command into `*kiki-scratch*` buffer |

@@ -26,6 +26,8 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer normal <minus> ':kiki-smart-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map buffer normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
     map buffer normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
+    map buffer normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
+    map buffer insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map buffer normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -42,6 +44,8 @@ hook -group kiki global WinSetOption filetype=kiki %{
     map window normal <minus> ':kiki-smart-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map window normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
     map window normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
+    map window normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
+    map window insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map window normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -687,3 +691,28 @@ define-command -override -docstring "kiki-close-file-buffers: close all kiki fil
     kiki-close-file-buffers %{
         kiki-close-buffers-matching file
     }
+
+# Insert prefix on current line (if empty) or next available empty line below, and enter insert mode
+define-command -override -docstring "kiki-smart-new-command: insert kiki_prefix on empty line or next available empty line" \
+    kiki-smart-new-command %{ evaluate-commands -draft -save-regs '"a' %{
+        set-register a %val{cursor_line}
+        execute-keys '<percent>'
+        evaluate-commands %sh{
+            cur_line="$kak_reg_a"
+            prefix="$kak_opt_kiki_prefix"
+            [ -z "$prefix" ] && prefix='$ '
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            target_line=$(printf '%s\n' "$kak_selection" | awk -v cur="$cur_line" '
+                NR == cur && /^[[:space:]]*$/ { print NR; exit }
+                NR > cur && /^[[:space:]]*$/ { print NR; exit }
+            ')
+
+            if [ -n "$target_line" ]; then
+                printf "%s %%{ select %s.1,%s.1; try %%{ execute-keys '<esc>xs\h+<ret>d' }; execute-keys 'i%s' }\n" "$eval_cmd" "$target_line" "$target_line" "$prefix"
+            else
+                printf "%s %%{ select %s.1,%s.1; execute-keys 'o%s' }\n" "$eval_cmd" "$cur_line" "$prefix"
+            fi
+        }
+    }}

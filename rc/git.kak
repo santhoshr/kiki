@@ -2,6 +2,7 @@
 
 # User modes for Git actions
 try %{ declare-user-mode git }
+try %{ declare-user-mode tree-git }
 try %{ declare-user-mode untracked }
 try %{ declare-user-mode modified }
 try %{ declare-user-mode staged }
@@ -11,6 +12,7 @@ try %{ declare-user-mode commit }
 # Options for tracking git target and status
 declare-option -hidden str kiki_git_target ""
 declare-option -hidden str kiki_git_status_type ""
+declare-option -hidden str kiki_tree_git_repo ""
 
 # Highlighting for Git Status inside Kiki buffers
 try %{ add-highlighter -override global/kiki_git_branch regex "(?m)^## [^\n]+" 0:cyan+b }
@@ -64,12 +66,65 @@ define-command -override -hidden -params 1 \
                 status_type="untracked"
             fi
         fi
-
         target=$(printf '%s\n' "$target" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^[\\\"'\''\`]*//' -e 's/[\\\"'\''\`]*$//')
+
+        # Helper to compute parent/repo display
+        display_repo() {
+            r="$1"
+            if [ -n "$r" ]; then
+                r_clean="${r%/}"
+                r_base=$(basename "$r_clean")
+                r_parent=$(basename "$(dirname "$r_clean")")
+                if [ -n "$r_parent" ] && [ "$r_parent" != "/" ] && [ "$r_parent" != "." ]; then
+                    printf "%s/%s" "$r_parent" "$r_base"
+                else
+                    printf "%s" "$r_base"
+                fi
+            fi
+        }
+
+        # Check if target is a directory
+        if [ -n "$target" ] && [ -d "$target" ]; then
+            # If target is a directory, check if it is or belongs to a git repository
+            top=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null)
+            if [ -n "$top" ]; then
+                printf "set-option buffer kiki_tree_git_repo %%{%s}\n" "$target"
+                printf "set-option buffer kiki_git_target %%{%s}\n" "$target"
+                printf "set-option buffer kiki_git_status_type %%{%s}\n" "dir"
+                repo_label=$(display_repo "$top")
+                printf "enter-user-mode tree-git\n"
+                printf "echo -markup \"{cyan}[kiki-git]{default} {yellow}%s{default} Git directory: {yellow}%s{default}\"\n" "$repo_label" "$target"
+                exit 0
+            fi
+        fi
 
         # Double check actual git porcelain status of target
         if [ -n "$target" ]; then
-            actual_porc=$(git status --porcelain -- "$target" 2>/dev/null | head -n1)
+            top=$(git rev-parse --show-toplevel 2>/dev/null)
+            if [ -z "$top" ]; then
+                # Try finding toplevel from target's directory
+                if [ -e "$target" ]; then
+                    top=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
+                fi
+            fi
+            if [ -n "$top" ]; then
+                printf "set-option buffer kiki_tree_git_repo %%{%s}\n" "$top"
+            fi
+
+            repo_dir=""
+            if [ -n "$top" ]; then
+                repo_dir="$top"
+            elif [ -e "$target" ]; then
+                repo_dir=$(dirname "$target")
+            fi
+
+            if [ -n "$repo_dir" ]; then
+                actual_porc=$(git -C "$repo_dir" status --porcelain -- "$target" 2>/dev/null | head -n1)
+            else
+                actual_porc=$(git status --porcelain -- "$target" 2>/dev/null | head -n1)
+            fi
+
+            is_clean_file=0
             if [ -n "$actual_porc" ]; then
                 code=$(printf '%s\n' "$actual_porc" | cut -c1-2)
                 case "$code" in
@@ -78,35 +133,112 @@ define-command -override -hidden -params 1 \
                     " M"|" D"|" U") status_type="modified" ;;
                     "MM"|"AM") status_type="staged+modified" ;;
                 esac
+            else
+                # If target exists and is tracked or clean
+                if [ -n "$repo_dir" ] && git -C "$repo_dir" ls-files --error-unmatch "$target" >/dev/null 2>&1; then
+                    status_type="clean"
+                    is_clean_file=1
+                fi
             fi
 
             printf "set-option buffer kiki_git_target %%{%s}\n" "$target"
             printf "set-option buffer kiki_git_status_type %%{%s}\n" "$status_type"
 
-            case "$status_type" in
-                "untracked")
-                    printf "enter-user-mode untracked\n"
-                    printf "echo -markup \"{cyan}[kiki-git]{default} Untracked: {magenta}%s{default}\"\n" "$target"
-                    ;;
-                "staged")
-                    printf "enter-user-mode staged\n"
-                    printf "echo -markup \"{cyan}[kiki-git]{default} Staged: {green}%s{default}\"\n" "$target"
-                    ;;
-                "staged+modified")
-                    printf "enter-user-mode staged-modified\n"
-                    printf "echo -markup \"{cyan}[kiki-git]{default} Staged+Modified: {green}%s{default}\"\n" "$target"
-                    ;;
-                *)
-                    printf "enter-user-mode modified\n"
-                    printf "echo -markup \"{cyan}[kiki-git]{default} Modified: {yellow}%s{default}\"\n" "$target"
-                    ;;
-            esac
+            repo_disp=""
+            [ -n "$repo_dir" ] && repo_disp=$(display_repo "$repo_dir")
+            [ -z "$repo_disp" ] && [ -n "$top" ] && repo_disp=$(display_repo "$top")
+            prefix_info=""
+            if [ -n "$repo_disp" ]; then
+                prefix_info="{yellow}${repo_disp}{default} "
+            fi
+
+            if [ "$is_clean_file" -eq 1 ]; then
+                printf "enter-user-mode git\n"
+                printf "echo -markup \"{cyan}[kiki-git]{default} %sFile (clean): {green}%s{default}\"\n" "$prefix_info" "$target"
+            else
+                case "$status_type" in
+                    "untracked")
+                        printf "enter-user-mode untracked\n"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sUntracked: {magenta}%s{default}\"\n" "$prefix_info" "$target"
+                        ;;
+                    "staged")
+                        printf "enter-user-mode staged\n"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sStaged: {green}%s{default}\"\n" "$prefix_info" "$target"
+                        ;;
+                    "staged+modified")
+                        printf "enter-user-mode staged-modified\n"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sStaged+Modified: {green}%s{default}\"\n" "$prefix_info" "$target"
+                        ;;
+                    *)
+                        printf "enter-user-mode modified\n"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sModified: {yellow}%s{default}\"\n" "$prefix_info" "$target"
+                        ;;
+                esac
+            fi
         else
+            top=""
+            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            fi
+            if [ -z "$top" ]; then
+                top=$(git rev-parse --show-toplevel 2>/dev/null)
+            fi
+            if [ -n "$top" ]; then
+                printf "set-option buffer kiki_tree_git_repo %%{%s}\n" "$top"
+            fi
+            repo_disp=""
+            [ -n "$top" ] && repo_disp=$(display_repo "$top")
+            prefix_info=""
+            [ -n "$repo_disp" ] && prefix_info="{yellow}${repo_disp}{default} "
+
             printf "set-option buffer kiki_git_target \"\"\n"
             printf "set-option buffer kiki_git_status_type \"\"\n"
             printf "enter-user-mode git\n"
-            printf "echo -markup \"{cyan}[kiki-git]{default} Common git actions\"\n"
+            printf "echo -markup \"{cyan}[kiki-git]{default} %sCommon git actions\"\n" "$prefix_info"
         fi
+    }}
+
+# Git popup trigger for resolved file tree paths (files or directories)
+define-command -override -hidden -params 1 \
+    kiki-tree-git-action %{ evaluate-commands %sh{
+        path="$1"
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        if [ -z "$path" ]; then
+            printf '%s %%{ enter-user-mode git }\n' "$eval_cmd"
+            exit 0
+        fi
+
+        if [ -d "$path" ]; then
+            top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)
+            if [ -n "$top" ]; then
+                r_clean="${top%/}"
+                r_base=$(basename "$r_clean")
+                r_parent=$(basename "$(dirname "$r_clean")")
+                if [ -n "$r_parent" ] && [ "$r_parent" != "/" ] && [ "$r_parent" != "." ]; then
+                    repo_disp="${r_parent}/${r_base}"
+                else
+                    repo_disp="${r_base}"
+                fi
+                printf '%s %%{ set-option buffer kiki_tree_git_repo %%{%s}; set-option buffer kiki_git_target %%{%s}; set-option buffer kiki_git_status_type "dir"; enter-user-mode tree-git; echo -markup "{cyan}[kiki-git]{default} {yellow}%s{default} Git repo: {yellow}%s{default}" }\n' "$eval_cmd" "$path" "$path" "$repo_disp" "$path"
+            else
+                printf '%s %%{ echo -markup "{yellow}[kiki-git]{default} %s is not a git repository" }\n' "$eval_cmd" "$path"
+            fi
+            exit 0
+        fi
+
+        if [ -f "$path" ] || [ -e "$path" ]; then
+            top=$(git -C "$(dirname "$path")" rev-parse --show-toplevel 2>/dev/null)
+            if [ -n "$top" ]; then
+                printf '%s %%{ set-option buffer kiki_tree_git_repo %%{%s}; kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$top" "$path"
+            else
+                printf '%s %%{ echo -markup "{yellow}[kiki-git]{default} %s is not in a git repository" }\n' "$eval_cmd" "$path"
+            fi
+            exit 0
+        fi
+
+        printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$path"
     }}
 
 # Git actions:
@@ -269,45 +401,98 @@ define-command -override -docstring "kiki-git-diff-cached: show git diff --cache
 
 # Diff all unstaged changes using drop to shell terminal
 define-command -override -docstring "kiki-git-diff-all: show git diff (all unstaged) in interactive shell terminal" \
-    kiki-git-diff-all %{
-        kiki-shell-do "git diff"
-    }
+    kiki-git-diff-all %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git diff}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git diff"\n'
+        fi
+    }}
 
 # Diff all staged changes using drop to shell terminal
 define-command -override -docstring "kiki-git-diff-all-cached: show git diff --cached (all staged) in interactive shell terminal" \
-    kiki-git-diff-all-cached %{
-        kiki-shell-do "git diff --cached"
-    }
+    kiki-git-diff-all-cached %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git diff --cached}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git diff --cached"\n'
+        fi
+    }}
 
 # Commit actions (drop to shell terminal)
 define-command -override -docstring "kiki-git-commit: run git commit in interactive shell terminal" \
-    kiki-git-commit %{
-        kiki-shell-do "git commit"
-    }
+    kiki-git-commit %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git commit}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git commit"\n'
+        fi
+    }}
 
 define-command -override -docstring "kiki-git-commit-all: run git commit -a in interactive shell terminal" \
-    kiki-git-commit-all %{
-        kiki-shell-do "git commit -a"
-    }
+    kiki-git-commit-all %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git commit -a}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git commit -a"\n'
+        fi
+    }}
 
 define-command -override -docstring "kiki-git-commit-amend: run git commit --amend in interactive shell terminal" \
-    kiki-git-commit-amend %{
-        kiki-shell-do "git commit --amend"
-    }
+    kiki-git-commit-amend %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git commit --amend}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git commit --amend"\n'
+        fi
+    }}
 
 define-command -override -docstring "kiki-git-commit-amend-no-edit: run git commit --amend --no-edit in interactive shell terminal" \
-    kiki-git-commit-amend-no-edit %{
-        kiki-shell-do "git commit --amend --no-edit"
-    }
+    kiki-git-commit-amend-no-edit %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git commit --amend --no-edit}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git commit --amend --no-edit"\n'
+        fi
+    }}
 
 # Git status in fifo buffer with automatic first-file cursor focus
 define-command -override -docstring "kiki-git-status: show git status in streaming fifo buffer and focus first file" \
     kiki-git-status %{ evaluate-commands %sh{
         pfx="${kak_opt_kiki_prefix:-\$ }"
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                buf_dir=$(dirname "$kak_buffile")
+                top=$(git -C "$buf_dir" rev-parse --show-toplevel 2>/dev/null)
+                if [ -n "$top" ]; then
+                    repo="$top"
+                fi
+            fi
+        fi
+        if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+            top=$(git rev-parse --show-toplevel 2>/dev/null)
+            if [ -n "$top" ]; then
+                repo="$top"
+            else
+                repo="$PWD"
+            fi
+        fi
+
         output_dir=$(mktemp -d "${TMPDIR:-/tmp}"/kak-make.XXXXXXXX)
         output="${output_dir}/fifo"
         mkfifo "${output}"
-        ( printf '%sgit status\n' "$pfx" > "${output}" && git status >> "${output}" 2>&1 ) > /dev/null 2>&1 < /dev/null &
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            ( printf '%sgit status # %s\n' "$pfx" "$repo" > "${output}" && (cd "${repo}" && git status) >> "${output}" 2>&1 ) > /dev/null 2>&1 < /dev/null &
+        else
+            ( printf '%sgit status\n' "$pfx" > "${output}" && git status >> "${output}" 2>&1 ) > /dev/null 2>&1 < /dev/null &
+        fi
 
         timestamp=$(date +%H%M%S)
         buffer_name="*kiki-fifo-git-status-${timestamp}*"
@@ -317,6 +502,7 @@ define-command -override -docstring "kiki-git-status: show git status in streami
             edit! -fifo ${output} -scroll ${buffer_name}
             set-option buffer filetype kiki
             set-option buffer kiki_buffer_type kiki-buffer
+            set-option buffer kiki_tree_git_repo %{${repo}}
             kiki-set-modeline kiki-buffer
             hook -always -once buffer BufCloseFifo .* %{
                 nop %sh{ rm -rf \"${output_dir}\" }
@@ -392,7 +578,12 @@ define-command -override -hidden -params 1 \
             escaped_line=$(printf '%s' "$target_line" | sed "s/'/''/g")
             printf '%s %%{ select %s.1,%s.1; kiki-git-line-action '\''%s'\'' }\n' "$eval_cmd" "$first_line" "$first_line" "$escaped_line"
         else
-            printf '%s %%{ select 1.1,1.1; set-option buffer kiki_git_target ""; set-option buffer kiki_git_status_type ""; enter-user-mode git; echo -markup "{cyan}[kiki-git]{default} Working tree clean" }\n' "$eval_cmd"
+            repo_disp=""
+            [ -n "$kak_opt_kiki_tree_git_repo" ] && repo_disp=$(display_repo "$kak_opt_kiki_tree_git_repo")
+            [ -z "$repo_disp" ] && [ -n "$top" ] && repo_disp=$(display_repo "$top")
+            prefix_info=""
+            [ -n "$repo_disp" ] && prefix_info="{yellow}${repo_disp}{default} "
+            printf '%s %%{ select 1.1,1.1; set-option buffer kiki_git_target ""; set-option buffer kiki_git_status_type ""; enter-user-mode git; echo -markup "{cyan}[kiki-git]{default} %sWorking tree clean" }\n' "$eval_cmd" "$prefix_info"
         fi
 
         rm -f "$tmp_buf"
@@ -584,7 +775,11 @@ define-command -override -hidden -params 2 \
             escaped_line=$(printf '%s' "$target_line" | sed "s/'/''/g")
             printf '%s %%{ select %s.1,%s.1; kiki-git-line-action '\''%s'\'' }\n' "$eval_cmd" "$result" "$result" "$escaped_line"
         else
-            printf '%s %%{ set-option buffer kiki_git_target ""; set-option buffer kiki_git_status_type ""; enter-user-mode git; echo -markup "{cyan}[kiki-git]{default} Working tree clean" }\n' "$eval_cmd"
+            repo_disp=""
+            [ -n "$kak_opt_kiki_tree_git_repo" ] && repo_disp=$(display_repo "$kak_opt_kiki_tree_git_repo")
+            prefix_info=""
+            [ -n "$repo_disp" ] && prefix_info="{yellow}${repo_disp}{default} "
+            printf '%s %%{ set-option buffer kiki_git_target ""; set-option buffer kiki_git_status_type ""; enter-user-mode git; echo -markup "{cyan}[kiki-git]{default} %sWorking tree clean" }\n' "$eval_cmd" "$prefix_info"
         fi
 
         rm -f "$tmp_buf"
@@ -592,9 +787,14 @@ define-command -override -hidden -params 2 \
 
 # Git log in interactive shell terminal
 define-command -override -docstring "kiki-git-log: show git log in interactive shell terminal" \
-    kiki-git-log %{
-        kiki-shell-do "git log"
-    }
+    kiki-git-log %{ evaluate-commands %sh{
+        repo="$kak_opt_kiki_tree_git_repo"
+        if [ -n "$repo" ] && [ -d "$repo" ]; then
+            printf 'kiki-shell-do %%{cd "%s" && git log}\n' "$repo"
+        else
+            printf 'kiki-shell-do "git log"\n'
+        fi
+    }}
 
 # Refresh git status in-place without affecting other buffer content
 define-command -override -docstring "kiki-git-refresh: refresh git status output at cursor without affecting other content" \
@@ -713,7 +913,19 @@ define-command -override -hidden -params 1 \
         cmd_line=$(printf '%s\n' "$res" | cut -d'|' -f4)
 
         tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-git-out.XXXXXXXX)
-        ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+        repo_in_cmd=""
+        case "$cmd" in
+            *#*)
+                repo_in_cmd=$(printf '%s\n' "$cmd" | sed -e 's/.*#[[:space:]]*//' -e 's/[[:space:]]*$//')
+                ;;
+        esac
+        if [ -n "$repo_in_cmd" ] && [ -d "$repo_in_cmd" ]; then
+            ( cd "$repo_in_cmd" && eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+        elif [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ]; then
+            ( cd "$kak_opt_kiki_tree_git_repo" && eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+        else
+            ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+        fi
 
         eval_cmd="evaluate-commands"
         [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
@@ -780,7 +992,12 @@ define-command -override -hidden -params 1 \
         if [ "$target_pos" -gt 0 ] 2>/dev/null; then
             commands_to_eval="${commands_to_eval}; select ${target_pos}.1,${target_pos}.1; kiki-git-line-action '${escaped_line}'"
         else
-            commands_to_eval="${commands_to_eval}; select 1.1,1.1; set-option buffer kiki_git_target ''; set-option buffer kiki_git_status_type ''; enter-user-mode git; echo -markup '{cyan}[kiki-git]{default} Working tree clean'"
+            repo_disp=""
+            [ -n "$repo_in_cmd" ] && repo_disp=$(display_repo "$repo_in_cmd")
+            [ -z "$repo_disp" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && repo_disp=$(display_repo "$kak_opt_kiki_tree_git_repo")
+            prefix_info=""
+            [ -n "$repo_disp" ] && prefix_info="{yellow}${repo_disp}{default} "
+            commands_to_eval="${commands_to_eval}; select 1.1,1.1; set-option buffer kiki_git_target ''; set-option buffer kiki_git_status_type ''; enter-user-mode git; echo -markup '{cyan}[kiki-git]{default} ${prefix_info}Working tree clean'"
         fi
 
         if [ -n "$commands_to_eval" ]; then
@@ -873,11 +1090,21 @@ map global staged-modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 # Mappings for user mode git (Compact Common Git Actions Popup / Clean tree)
 map global git <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global git <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global git s ':kiki-git-status<ret>' -docstring 'Status'
 map global git c ':enter-user-mode commit<ret>' -docstring 'Commit...'
 map global git l ':kiki-git-log<ret>' -docstring 'Log'
 map global git d ':kiki-git-diff-all<ret>' -docstring 'Diff'
 map global git r ':kiki-git-refresh<ret>' -docstring 'Refresh'
+map global git p ':kiki-git-preview<ret>' -docstring 'Preview'
+map global git e ':kiki-git-edit<ret>' -docstring 'Edit'
 map global git q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
+
+# Mappings for user mode tree-git (File tree git common popup)
+map global tree-git s ':kiki-git-status<ret>' -docstring 'Status'
+map global tree-git c ':enter-user-mode commit<ret>' -docstring 'Commit...'
+map global tree-git l ':kiki-git-log<ret>' -docstring 'Log'
+map global tree-git d ':kiki-git-diff-all<ret>' -docstring 'Diff'
+map global tree-git q ':nop<ret>' -docstring 'Quit popup'
 
 # Mappings for user mode commit (Commit actions popup)
 map global commit c ':kiki-git-commit<ret>' -docstring 'Commit'

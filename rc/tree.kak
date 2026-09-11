@@ -118,21 +118,38 @@ define-command -override -hidden -params 1 \
     }}
 
 # Open/toggle tree item at cursor (supports root nodes, subdirectories, files, and arbitrary new paths)
-define-command -override -hidden \
+define-command -override -hidden -params 0..1 \
     kiki-tree-open %{ evaluate-commands %sh{
+        mode="${1:-auto}"
         tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
         printf 'write -force "%s"\n' "$tmp_file"
-        printf 'kiki-tree-open-do "%s"\n' "$tmp_file"
+        printf 'kiki-tree-open-do "%s" "%s"\n' "$tmp_file" "$mode"
     }}
 
-define-command -override -hidden -params 1 \
+define-command -override -hidden \
+    kiki-tree-expand %{
+        kiki-tree-open expand
+    }
+
+define-command -override -hidden \
+    kiki-tree-collapse %{
+        kiki-tree-open collapse
+    }
+
+define-command -override -hidden \
+    kiki-tree-toggle %{
+        kiki-tree-open toggle
+    }
+
+define-command -override -hidden -params 1..2 \
     kiki-tree-open-do %{ evaluate-commands %sh{
         tmp_file="$1"
+        action_mode="${2:-auto}"
         cur="$kak_cursor_line"
         hidden="$kak_opt_kiki_tree_show_hidden"
         home_dir="$HOME"
 
-        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" '
+        awk -v cur="$cur" -v hidden="$hidden" -v tmp_file="$tmp_file" -v home="$home_dir" -v pwd="$PWD" -v action_mode="$action_mode" '
         function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
             if (!tabstop) tabstop = 4
             res = ""
@@ -270,9 +287,24 @@ define-command -override -hidden -params 1 \
                 is_expanded = 0
             }
 
+
+            if (action_mode == "expand" && is_expanded) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+            if (action_mode == "collapse" && !is_expanded) {
+                system("rm -f \"" tmp_file "\"")
+                exit
+            }
+
+            should_collapse = 0
+            if (action_mode == "collapse") should_collapse = 1
+            else if (action_mode == "expand") should_collapse = 0
+            else should_collapse = is_expanded
+
             out_tmp = tmp_file ".out"
 
-            if (is_expanded) {
+            if (should_collapse) {
                 # Collapse
                 end_idx = cur + 1
                 while (end_idx <= total && get_indent(lines[end_idx]) > t_indent && lines[end_idx] !~ /^[ \t]*#/) {

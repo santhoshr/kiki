@@ -32,6 +32,7 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map buffer normal <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
     map buffer insert <a-C> '<esc>:kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
+    map buffer normal <a-g> ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
     map buffer normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -54,6 +55,7 @@ hook -group kiki global WinSetOption filetype=kiki %{
     map window insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map window normal <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
     map window insert <a-C> '<esc>:kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
+    map window normal <a-g> ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
     map window normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -261,7 +263,7 @@ define-command -override -hidden \
             eval_cmd="evaluate-commands"
             [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
-                target_cmd="kiki-tree-open"
+                target_cmd="kiki-tree-toggle"
             else
                 target_cmd="execute-keys <c-o>"
             fi
@@ -1030,3 +1032,87 @@ define-command -override -hidden -params 2 \
         escaped_prefix=$(printf '%s' "$prefix" | sed "s/'/''/g")
         printf "%s %%{ select %s.1,%s.1; execute-keys '%s%s' }\n" "$eval_cmd" "$target" "$target" "$keys" "$escaped_prefix"
     }}
+
+define-command -override -hidden \
+    kiki-smart-git-popup %{ evaluate-commands -draft %{
+        execute-keys "<esc>x"
+        evaluate-commands %sh{
+            trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # 1. Tree buffer (*kiki-file-tree* / *.kikitree) or tree node lines (+ dir/ or - file)
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-resolve-path kiki-tree-git-action }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-resolve-path kiki-tree-git-action }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 2. Git status lines
+            case "$kak_bufname" in
+                \*kiki-fifo-git*|\*kiki-fifo-*git*)
+                    printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
+                printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
+                exit 0
+            fi
+
+            # 3. If in a non-kiki buffer that is backed by a real file, prioritize the buffer file
+            case "$kak_bufname" in
+                \*kiki*|*.kikitree|*.kiki) ;;
+                *)
+                    if [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+                        printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$kak_buffile"
+                        exit 0
+                    fi
+                    ;;
+            esac
+
+            # 4. Plain filesystem path on line
+            if printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                p_clean=$(printf "%s\n" "$trimmed" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+                printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$p_clean"
+                exit 0
+            fi
+
+            # 5. Word/path under cursor
+            uri=$(printf "%s\n" "$trimmed" | awk '{print $1}' | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+            case "$uri" in
+                "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
+                "~") uri_exp="${HOME}" ;;
+                *) uri_exp="$uri" ;;
+            esac
+            if [ -e "$uri_exp" ]; then
+                printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$uri"
+                exit 0
+            fi
+
+            # 6. Check if current buffer is a real file
+            if [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+                printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$kak_buffile"
+                exit 0
+            fi
+
+            # 7. Default fallback: open git popup for buffer's directory or current PWD
+            buf_top=""
+            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                buf_top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            fi
+            if [ -n "$buf_top" ]; then
+                printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$buf_top"
+            else
+                printf '%s %%{ enter-user-mode git }\n' "$eval_cmd"
+            fi
+        }
+    }}
+

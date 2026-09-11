@@ -195,6 +195,7 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 
 ### File Tree Keybindings:
 - `<ret>` / `<c-o>`: Toggle folder expand (`+ `) / collapse (`- `), or open file directly into an editor buffer.
+- `<a-g>`: Open **Git Action Popup** for any file or directory under cursor in the file tree (or in any Kiki buffer).
 - `<tab>`: **Step Into** — promotes the selected subfolder to become the root directory of the tree view.
 - `<c-l>`: **Move to Parent** — moves the tree view up to the parent directory.
 - `*`: **Recursive Expand** — recursively unfolds all subdirectories under cursor.
@@ -205,6 +206,16 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 - `P`: Change Kakoune's working directory (`$PWD`) to the selected folder.
 - `D`: Drop into an interactive shell in the selected folder.
 - `q`: Close the file tree buffer.
+
+#### Git Repository Action Popup in File Tree (`<a-g>`):
+Pressing `<a-g>` on any directory in `*kiki-file-tree*` opens the `tree-git` popup:
+- `s`: **Status** — opens `git status` in a FIFO buffer for that repository.
+- `c`: **Commit...** — opens the Git commit menu (`commit`).
+- `l`: **Log** — runs `git log` in an interactive shell terminal for that repo.
+- `d`: **Diff** — runs `git diff` in an interactive shell terminal for that repo.
+- `q`: **Quit popup** — closes the popup without changes.
+
+Pressing `<a-g>` on any file (in the file tree or inside normal editor buffers) opens the contextual Git action popup (`untracked`, `modified`, `staged`, or `git`) scoped to that file.
 
 > **Tip:** You can also run `:edit /path/to/dir/` (or `:e .`) as usual. Kiki automatically catches Kakoune's directory error and opens the file tree for that folder.
 
@@ -323,6 +334,7 @@ Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tr
 | `-` | Narrows/hides sibling folders in tree |
 | `r` | Refreshes directory node or Git status block in-place |
 | `.` | Toggles hidden dotfiles in tree |
+| `<a-g>` | Opens Git action popup for any file or directory (in file tree or buffers) |
 | `q` | Closes buffer |
 
 ---

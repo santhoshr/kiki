@@ -77,7 +77,8 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 
 ### E. Interactive Multi-Root File Tree (`rc/tree.kak`)
 - **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
-- **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` or `<c-o>`.
+- **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` (or `<c-o>`).
+- **Git Action Popup in Tree:** Pressing `<a-g>` on any file or directory in the file tree opens the Git action popup (`tree-git` on directories, or file status popup on files).
 - **Directory Trap:** A `RuntimeError` hook intercepts Kakoune's native `:edit <dir>` (*"is a directory"*) error and immediately launches `kiki-file-tree` on that directory.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Keybindings in Kiki Buffers:**
@@ -95,6 +96,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `.`: Toggle hidden dotfiles.
   - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
   - `<a-C>`: Insert `kiki_prefix` into current line (if empty) or previous available empty line above, and enter insert mode.
+  - `<a-g>`: Open Git action popup for any file or directory under cursor.
   - `D`: Execute command in terminal shell, or drop to shell in directory/path under cursor.
   - `q`: Close/delete Kiki buffer.
 
@@ -192,6 +194,16 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `p` | `kiki-git-preview` | Preview file in connected preview client |
 | `e` | `kiki-git-edit` | Open file directly in Kakoune |
 | `q` | `kiki-smart-close` | Quit buffer |
+
+### User Mode: `tree-git` (File Tree Git Repo Popup)
+
+| Key | Command | Description |
+| :--- | :--- | :--- |
+| `s` | `kiki-git-status` | Show git status in streaming FIFO buffer |
+| `c` | — | Enter `commit` commit popup menu |
+| `l` | `kiki-git-log` | View git log in interactive terminal shell |
+| `d` | `kiki-git-diff-all` | View unstaged diff in interactive terminal shell |
+| `q` | — | Close popup menu |
 
 ### User Mode: `git` (Limited/Common Git Actions Popup)
 

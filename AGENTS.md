@@ -94,6 +94,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `r`: Refresh directory node or Git status block in-place.
   - `.`: Toggle hidden dotfiles.
   - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
+  - `<a-C>`: Insert `kiki_prefix` into current line (if empty) or previous available empty line above, and enter insert mode.
   - `D`: Execute command in terminal shell, or drop to shell in directory/path under cursor.
   - `q`: Close/delete Kiki buffer.
 
@@ -112,6 +113,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `c` | — | Insert `kiki_prefix` (`$ `) at cursor position |
 | `C` | — | Prefix current line with `kiki_prefix` (`I$ `) |
 | `<a-c>` | `kiki-smart-new-command` | Insert `kiki_prefix` into current or next empty line |
+| `<a-C>` | `kiki-smart-new-command-above` | Insert `kiki_prefix` into current or previous empty line |
 | `y` | `kiki-select` | Select and yank command text after prefix |
 | `i` | `kiki-inline` | Execute command and insert pre-selected output below |
 | `s` | `kiki-scratch` | Execute command into `*kiki-scratch*` buffer |
@@ -150,7 +152,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `r` | `kiki-git-refresh` | Refresh Git status output in-place |
 | `p` | `kiki-git-preview` | Preview file in connected preview client |
 | `e` | `kiki-git-edit` | Open file directly in Kakoune |
-| `q` | — | Close popup menu |
+| `q` | `kiki-smart-close` | Quit buffer |
 
 ### User Mode: `staged` (Staged File Popup)
 
@@ -169,7 +171,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `r` | `kiki-git-refresh` | Refresh Git status output in-place |
 | `p` | `kiki-git-preview` | Preview file in connected preview client |
 | `e` | `kiki-git-edit` | Open file directly in Kakoune |
-| `q` | — | Close popup menu |
+| `q` | `kiki-smart-close` | Quit buffer |
 
 ### User Mode: `untracked` (Untracked File Popup)
 
@@ -189,7 +191,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `r` | `kiki-git-refresh` | Refresh Git status output in-place |
 | `p` | `kiki-git-preview` | Preview file in connected preview client |
 | `e` | `kiki-git-edit` | Open file directly in Kakoune |
-| `q` | — | Close popup menu |
+| `q` | `kiki-smart-close` | Quit buffer |
 
 ### User Mode: `git` (Limited/Common Git Actions Popup)
 
@@ -199,7 +201,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `l` | `kiki-git-log` | View git log in interactive terminal shell |
 | `d` | `kiki-git-diff-all` | View diff in interactive terminal shell |
 | `r` | `kiki-git-refresh` | Refresh Git status output in-place |
-| `q` | — | Close popup menu |
+| `q` | `kiki-smart-close` | Quit buffer |
 
 ### User Mode: `commit` (Git Commit Popup)
 

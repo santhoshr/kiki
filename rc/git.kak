@@ -817,7 +817,7 @@ map global untracked l ':kiki-git-log<ret>' -docstring 'Log'
 map global untracked r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global untracked p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global untracked e ':kiki-git-edit<ret>' -docstring 'Edit'
-map global untracked q ':nop<ret>' -docstring 'Quit'
+map global untracked q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode modified (Modified / Conflict File Popup)
 map global modified <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
@@ -834,7 +834,7 @@ map global modified l ':kiki-git-log<ret>' -docstring 'Log'
 map global modified r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global modified p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global modified e ':kiki-git-edit<ret>' -docstring 'Edit'
-map global modified q ':nop<ret>' -docstring 'Quit'
+map global modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode staged (Staged File Popup)
 map global staged <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
@@ -850,7 +850,7 @@ map global staged l ':kiki-git-log<ret>' -docstring 'Log'
 map global staged r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global staged p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global staged e ':kiki-git-edit<ret>' -docstring 'Edit'
-map global staged q ':nop<ret>' -docstring 'Quit'
+map global staged q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode staged-modified (Staged + Modified File Popup)
 map global staged-modified <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
@@ -868,7 +868,7 @@ map global staged-modified l ':kiki-git-log<ret>' -docstring 'Log'
 map global staged-modified r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global staged-modified p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global staged-modified e ':kiki-git-edit<ret>' -docstring 'Edit'
-map global staged-modified q ':nop<ret>' -docstring 'Quit'
+map global staged-modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode git (Compact Common Git Actions Popup / Clean tree)
 map global git <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
@@ -877,7 +877,7 @@ map global git c ':enter-user-mode commit<ret>' -docstring 'Commit...'
 map global git l ':kiki-git-log<ret>' -docstring 'Log'
 map global git d ':kiki-git-diff-all<ret>' -docstring 'Diff'
 map global git r ':kiki-git-refresh<ret>' -docstring 'Refresh'
-map global git q ':nop<ret>' -docstring 'Quit'
+map global git q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode commit (Commit actions popup)
 map global commit c ':kiki-git-commit<ret>' -docstring 'Commit'

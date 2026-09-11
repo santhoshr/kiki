@@ -21,7 +21,8 @@ for getting things done.
    - `O`: Smart contextual open (topics in topic list, file tree on paths, FIFO on commands).
    - `P`: Change Kakoune's working directory to folder path or parent of file path.
    - `D`: Run command in terminal shell or drop to shell in target directory.
-   - `<a-c>`: Insert prefix on current or next empty line in both **normal and insert modes**.
+   - `<a-c>`: Insert prefix on current or next empty line (downward) in both **normal and insert modes**.
+   - `<a-C>`: Insert prefix on current or previous empty line (upward) in both **normal and insert modes**.
    - `q`: Close/delete current Kiki buffer.
  - **Interactive Multi-Root File Tree (`kiki-file-tree` / `<o>`):**
    - Collapsible and expandable directory tree navigation (`+ ` and `- `).
@@ -162,11 +163,11 @@ $ git log --graph --oneline --decorate -n 20
 
 These shortcuts insert your `kiki_prefix` so you don't need to type it manually every time.
 
-### Smart New Command (`<a-c>`) — Normal & Insert Modes
-Press `<a-c>` in either **normal mode** or **insert mode**:
-- If the current line is empty (or whitespace-only), it cleans the line, inserts `$ `, and puts you in insert mode ready to type.
-- If the current line has text, it finds the next available empty line below, inserts `$ `, and puts you in insert mode.
-- If no empty lines exist below, it opens a new line below (`o`), inserts `$ `, and puts you in insert mode.
+### Smart New Command (`<a-c>` & `<a-C>`) — Normal & Insert Modes
+Press `<a-c>` (downward) or `<a-C>` (upward) in either **normal mode** or **insert mode**:
+- **`<a-c>` (downward):** Finds the next available line break below (or inserts line breaks if none exist), inserts `$ `, ensures blank line separation above and below, and places the cursor in insert mode.
+- **`<a-C>` (upward):** Finds the previous available line break above (or inserts line breaks if none exist), inserts `$ `, ensures blank line separation above and below, and places the cursor in insert mode.
+- If the current line is empty, it places the prompt with clean blank line separation above and below and enters insert mode.
 
 ### Prefixing existing lines (`<c>` and `<C>`)
 - `<c>`: Inserts `$ ` at the current cursor position.
@@ -289,7 +290,7 @@ Pressing `<ret>` or rotating with `<tab>` / `<s-tab>` opens the **Smart Git Acti
 | `r` | **Refresh** | Refreshes the Git status block in-place without altering other text |
 | `p` | **Preview** | Previews the target file in connected `preview` client |
 | `e` | **Edit** | Opens the file directly in Kakoune |
-| `q` | **Quit** | Closes the popup menu without performing any action |
+| `q` | **Quit Buffer** | Closes/quits current buffer |
 
 ### Git Commit Popup (`commit`):
 Press `c` inside the Git action popup to enter the commit menu:
@@ -314,7 +315,8 @@ Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tr
 | `p` | Opens or updates buffer view in connected preview client (`preview`) |
 | `P` | Changes working directory to folder or file's parent directory |
 | `D` | Terminal shell on command, or drops into interactive shell in folder |
-| `<a-c>` | Inserts `$ ` on current empty line or next available empty line (normal & insert mode) |
+| `<a-c>` | Inserts `$ ` on current or next empty line below (normal & insert mode) |
+| `<a-C>` | Inserts `$ ` on current or previous empty line above (normal & insert mode) |
 | `<c-o>` | Toggles folder expand/collapse in tree or opens file |
 | `<c-l>` | Moves up to parent folder in tree |
 | `*` | Recursively expands tree node |
@@ -391,6 +393,7 @@ set-option global kiki_tree_show_hidden false
 | `c` | — | Insert `kiki_prefix` (`$ `) at cursor position |
 | `C` | — | Prefix current line with `kiki_prefix` (`I$ `) |
 | `<a-c>` | `kiki-smart-new-command` | Insert `kiki_prefix` on current or next empty line |
+| `<a-C>` | `kiki-smart-new-command-above` | Insert `kiki_prefix` on current or previous empty line |
 | `y` | `kiki-select` | Select and yank command text after prefix |
 | `i` | `kiki-inline` | Execute command and insert output below |
 | `s` | `kiki-scratch` | Execute command into `*kiki-scratch*` buffer |
@@ -419,7 +422,7 @@ Kiki was originally conceived and created by **[Alexander Maricich (2019)](https
 
 This modernized and expanded edition builds upon the original concept by introducing:
 - Interactive multi-root collapsible file tree with folder step-into (`<tab>`), move-to-parent (`<c-l>`), recursive expansion (`*`), and in-place refresh (`r`).
-- Contextual smart keybindings in Kiki buffers (`<ret>`, `<tab>`, `O`, `P`, `D`, `<a-c>`, `q`).
+- Contextual smart keybindings in Kiki buffers (`<ret>`, `<tab>`, `O`, `P`, `D`, `<a-c>`, `<a-C>`, `q`).
 - Ancestor process-tree interactive shell auto-detection (`zsh`, `fish`, `bash`, `nu`).
 - Decoupled `stdin` execution preventing editor lockups.
 - Dynamic option-driven prefix parsing and synchronized regex syntax highlighting.

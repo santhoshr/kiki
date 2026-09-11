@@ -30,6 +30,8 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map buffer normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map buffer insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
+    map buffer normal <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
+    map buffer insert <a-C> '<esc>:kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
     map buffer normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -50,6 +52,8 @@ hook -group kiki global WinSetOption filetype=kiki %{
     map window normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map window normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map window insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
+    map window normal <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
+    map window insert <a-C> '<esc>:kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
     map window normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -768,15 +772,11 @@ define-command -override -hidden \
         }
     }}
 
-# Smart close: for scratch/tree buffers, delete without prompt; for files, standard q
+# Smart close: delete/quit current buffer cleanly
 define-command -override -hidden \
-    kiki-smart-close %{ evaluate-commands %sh{
-        case "$kak_bufname" in
-            \*kiki-*) printf 'delete-buffer\n' ;;
-            *.kikitree) printf 'delete-buffer\n' ;;
-            *) printf 'execute-keys q\n' ;;
-        esac
-    }}
+    kiki-smart-close %{
+        delete-buffer
+    }
 
 # Open disposable quick scratchpad (*kiki-scratchpad-<timestamp>*)
 define-command -override -docstring "kiki-scratchpad: open a disposable scratchpad buffer supporting all kiki commands" \
@@ -930,26 +930,103 @@ define-command -override -docstring "kiki-close-file-buffers: close all kiki fil
     }
 
 # Insert prefix on current line (if empty) or next available empty line below, and enter insert mode
-define-command -override -docstring "kiki-smart-new-command: insert kiki_prefix on empty line or next available empty line" \
-    kiki-smart-new-command %{ evaluate-commands -draft -save-regs '"a' %{
-        set-register a %val{cursor_line}
-        execute-keys '<percent>'
-        evaluate-commands %sh{
-            cur_line="$kak_reg_a"
-            prefix="$kak_opt_kiki_prefix"
-            [ -z "$prefix" ] && prefix='$ '
-            eval_cmd="evaluate-commands"
-            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+define-command -override -docstring "kiki-smart-new-command: insert kiki_prefix on empty line or next available empty line below" \
+    kiki-smart-new-command %{ evaluate-commands %sh{
+        tmp_buf=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-buf.XXXXXXXX)
+        printf 'write -sync -force "%s"\n' "$tmp_buf"
+        printf 'kiki-smart-new-command-do "%s" down\n' "$tmp_buf"
+    }}
 
-            target_line=$(printf '%s\n' "$kak_selection" | awk -v cur="$cur_line" '
-                NR == cur && /^[[:space:]]*$/ { print NR; exit }
-                NR > cur && /^[[:space:]]*$/ { print NR; exit }
-            ')
+# Insert prefix on current line (if empty) or previous available empty line above, and enter insert mode
+define-command -override -docstring "kiki-smart-new-command-above: insert kiki_prefix on empty line or previous available empty line above" \
+    kiki-smart-new-command-above %{ evaluate-commands %sh{
+        tmp_buf=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-buf.XXXXXXXX)
+        printf 'write -sync -force "%s"\n' "$tmp_buf"
+        printf 'kiki-smart-new-command-do "%s" up\n' "$tmp_buf"
+    }}
 
-            if [ -n "$target_line" ]; then
-                printf "%s %%{ select %s.1,%s.1; try %%{ execute-keys '<esc>xs\h+<ret>d' }; execute-keys 'i%s' }\n" "$eval_cmd" "$target_line" "$target_line" "$prefix"
-            else
-                printf "%s %%{ select %s.1,%s.1; execute-keys 'o%s' }\n" "$eval_cmd" "$cur_line" "$prefix"
-            fi
+define-command -override -hidden -params 2 \
+    kiki-smart-new-command-do %{ evaluate-commands %sh{
+        tmp_buf="$1"
+        mode="$2"
+        cur_line="$kak_cursor_line"
+        prefix="$kak_opt_kiki_prefix"
+        [ -z "$prefix" ] && prefix='$ '
+
+        res=$(awk -v cur_line="$cur_line" -v mode="$mode" '
+        BEGIN { total = 0 }
+        {
+            total++
+            is_blank[total] = ($0 ~ /^[ \t]*$/) ? 1 : 0
         }
+        END {
+            cur = cur_line + 0
+            if (cur < 1) cur = 1
+            if (cur > total) cur = total
+            if (total == 0) {
+                print "1 o<esc>o<esc>ki"
+                exit
+            }
+            if (mode == "down") {
+                if (is_blank[cur]) {
+                    above_blank = (cur > 1 && is_blank[cur - 1]) ? 1 : 0
+                    below_blank = (cur < total && is_blank[cur + 1]) ? 1 : 0
+                    if (cur == 1) {
+                        print "1 O<esc>o<esc>ki"
+                    } else if (above_blank) {
+                        print cur " o<esc>o<esc>ki"
+                    } else {
+                        print cur " o<esc>o<esc>ki"
+                    }
+                    exit
+                }
+                target = 0
+                for (i = cur + 1; i <= total; i++) {
+                    if (is_blank[i]) {
+                        target = i
+                        break
+                    }
+                }
+                if (target > 0) {
+                    print target " o<esc>o<esc>ki"
+                } else {
+                    print total " o<esc>o<esc>o<esc>ki"
+                }
+            } else {
+                if (cur == 1) {
+                    print "1 O<esc>o<esc>ki"
+                    exit
+                }
+                if (is_blank[cur]) {
+                    print cur " O<esc>O<esc>ji"
+                    exit
+                }
+                target = 0
+                for (i = cur - 1; i >= 1; i--) {
+                    if (is_blank[i]) {
+                        target = i
+                        break
+                    }
+                }
+                if (target > 0) {
+                    print target " o<esc>o<esc>ki"
+                } else {
+                    print "1 O<esc>o<esc>ki"
+                }
+            }
+        }
+        ' "$tmp_buf")
+
+        rm -f "$tmp_buf"
+
+        target=$(printf '%s\n' "$res" | awk '{print $1}')
+        keys=$(printf '%s\n' "$res" | cut -d' ' -f2-)
+        [ -z "$target" ] && target="$cur_line"
+        [ -z "$keys" ] && keys="o<esc>o<esc>o<esc>ki"
+
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        escaped_prefix=$(printf '%s' "$prefix" | sed "s/'/''/g")
+        printf "%s %%{ select %s.1,%s.1; execute-keys '%s%s' }\n" "$eval_cmd" "$target" "$target" "$keys" "$escaped_prefix"
     }}

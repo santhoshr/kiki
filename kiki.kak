@@ -34,6 +34,7 @@ evaluate-commands %sh{
 map global kiki c "i%opt{kiki_prefix}<esc>" -docstring 'Insert kiki_prefix at cursor position.'
 map global kiki C "<esc>I%opt{kiki_prefix}<esc>" -docstring 'Prefix the current line with kiki_prefix.'
 map global kiki <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki_prefix on empty line or next available empty line.'
+map global kiki <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki_prefix on empty line or previous available empty line.'
 
 # Command execution and manipulation
 map global kiki y ':kiki-select<ret>y' -docstring 'Select and yank after prefix.'

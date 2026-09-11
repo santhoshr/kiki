@@ -320,6 +320,7 @@ define-command -override -docstring "kiki-git-status: show git status in streami
             kiki-set-modeline kiki-buffer
             hook -always -once buffer BufCloseFifo .* %{
                 nop %sh{ rm -rf \"${output_dir}\" }
+                try %{ ansi-render }
                 evaluate-commands -try-client '${client}' %{
                     kiki-git-jump-first-file
                 }

@@ -64,13 +64,22 @@ define-command -override -hidden -params 2 \
 
         if [ "$start_line" -le "$end_line" ]; then
             if [ -s "$tmp_out" ]; then
-                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{|cat "%s"<ret>}; select %s.1,%s.1 }\n' "$eval_cmd" "$start_line" "$end_line" "$tmp_out" "$cur_line" "$cur_line"
+                out_lines=$(awk 'END {print NR}' "$tmp_out")
+                [ "$out_lines" -lt 1 ] 2>/dev/null && out_lines=1
+                insert_end=$(( start_line + out_lines - 1 ))
+                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{|cat "%s"<ret>}; select %s.1,%s.99999999; try %%{ ansi-render-selection }; select %s.1,%s.1 }\n' \
+                    "$eval_cmd" "$start_line" "$end_line" "$tmp_out" "$start_line" "$insert_end" "$cur_line" "$cur_line"
             else
                 printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{d}; select %s.1,%s.1 }\n' "$eval_cmd" "$start_line" "$end_line" "$cur_line" "$cur_line"
             fi
         else
             if [ -s "$tmp_out" ]; then
-                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{o<esc>|cat "%s"<ret>}; select %s.1,%s.1 }\n' "$eval_cmd" "$cur_line" "$cur_line" "$tmp_out" "$cur_line" "$cur_line"
+                out_lines=$(awk 'END {print NR}' "$tmp_out")
+                [ "$out_lines" -lt 1 ] 2>/dev/null && out_lines=1
+                insert_start=$(( cur_line + 1 ))
+                insert_end=$(( cur_line + out_lines ))
+                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{o<esc>|cat "%s"<ret>}; select %s.1,%s.99999999; try %%{ ansi-render-selection }; select %s.1,%s.1 }\n' \
+                    "$eval_cmd" "$cur_line" "$cur_line" "$tmp_out" "$insert_start" "$insert_end" "$cur_line" "$cur_line"
             fi
         fi
 
@@ -108,6 +117,7 @@ define-command -override -hidden -params 1 \
         printf 'set-option buffer kiki_buffer_type kiki-buffer\n'
         printf 'kiki-set-modeline kiki-buffer\n'
         printf 'execute-keys -draft %%{<percent>d!cat "%s"<ret>}\n' "$tmp_out"
+        printf 'try %%{ ansi-render }\n'
         printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
     }}
 
@@ -147,7 +157,10 @@ define-command -override -hidden -params 1 \
             set-option buffer filetype kiki
             set-option buffer kiki_buffer_type kiki-buffer
             kiki-set-modeline kiki-buffer
-            hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
+            hook -always -once buffer BufCloseFifo .* %{
+                nop %sh{ rm -r $(dirname ${output}) }
+                try %{ ansi-render }
+            }
         }"
     }}
 

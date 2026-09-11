@@ -8,9 +8,9 @@ for getting things done.
 
 **Kiki provides the following functionality:**
  - **Execution of shell commands** from within the editor. Output can be piped:
-   - Inline directly below the command (`<i>` or `<tab>`).
-   - In a dedicated scratch buffer (`<s>`).
-   - In a streaming asynchronous FIFO buffer (`<f>` or `<ret>`).
+   - Inline directly below the command (`<i>` or `<tab>`), with selective ANSI color rendering (`ansi-render-selection` if available).
+   - In a dedicated scratch buffer (`<s>`), colorized via `ansi-render` if available.
+   - In a streaming asynchronous FIFO buffer (`<f>` or `<ret>`), colorized via `ansi-render` if available.
    - In a background job reporting the PID (`<b>`).
    - In an interactive terminal shell (`<!>` or `<D>`).
  - **Documentation that is executable:**

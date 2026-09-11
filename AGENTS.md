@@ -32,9 +32,9 @@ bundle/kiki/
 2. **Topic files (`*.kiki`):**
    Topic notes are kept in `kiki_topics` (defaults to `~/.config/kak/kiki/` or user's custom directory like `~/dex/Vocab/Kiki/`).
 3. **Execution Modes:**
-   - **Inline (`i`):** Executes command and inserts pre-selected output directly below the command line.
-   - **Scratch (`s`):** Executes command into a disposable, dedicated `*kiki-scratch*` buffer with modeline tag `[kiki:scratch]`.
-   - **FIFO (`f`):** Asynchronously streams output into a timestamped buffer `*kiki-fifo-<cmd>-<time>*` via named pipe (`mkfifo`).
+   - **Inline (`i`):** Executes command and inserts pre-selected output directly below the command line (automatically rendering ANSI colors via `ansi-render-selection` on output lines if available).
+   - **Scratch (`s`):** Executes command into a disposable, dedicated `*kiki-scratch*` buffer with modeline tag `[kiki:scratch]` (automatically colorizes output via `ansi-render` if available).
+   - **FIFO (`f`):** Asynchronously streams output into a timestamped buffer `*kiki-fifo-<cmd>-<time>*` via named pipe (`mkfifo`) (automatically colorizes output via `ansi-render` on stream completion if available).
    - **Background (`b`):** Fires command asynchronously in detached subshell (`&`) and reports the PID.
    - **Shell (`!`):** Spawns an interactive terminal running the command in Kakoune's current `$PWD`, pausing on exit.
 

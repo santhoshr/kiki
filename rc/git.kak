@@ -60,13 +60,26 @@ define-command -override -hidden -params 1 \
 
         # 3. Plain filename (e.g. untracked files section list in standard git status)
         elif [ -n "$raw" ] && ! printf '%s\n' "$raw" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|\$|>|^[+-][[:space:]])'; then
-            clean_raw=$(printf '%s\n' "$raw" | sed -e 's/^[\\\"'\''\`(<]*//' -e 's/[\\\"'\''\`)>]*$//')
+            clean_raw=$(printf '%s\n' "$raw" | sed -e 's/^[\\\"'\''`(<]*//' -e 's/[\\\"'\''`)>]*$//')
             if [ -e "$clean_raw" ]; then
                 target="$clean_raw"
-                status_type="untracked"
+            elif [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] \
+                 && [ -e "${kak_opt_kiki_tree_git_repo%/}/${clean_raw}" ]; then
+                target="${kak_opt_kiki_tree_git_repo%/}/${clean_raw}"
             fi
         fi
         target=$(printf '%s\n' "$target" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^[\\\"'\''\`]*//' -e 's/[\\\"'\''\`]*$//')
+        # If target is relative, try to resolve it to an absolute path using kiki_tree_git_repo
+        case "$target" in
+            /*) ;;
+            "")  ;;
+            *)
+                if [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] \
+                   && [ -e "${kak_opt_kiki_tree_git_repo%/}/${target}" ]; then
+                    target="${kak_opt_kiki_tree_git_repo%/}/${target}"
+                fi
+                ;;
+        esac
 
         # Helper to compute parent/repo display
         display_repo() {
@@ -100,25 +113,19 @@ define-command -override -hidden -params 1 \
 
         # Double check actual git porcelain status of target
         if [ -n "$target" ]; then
-            top=$(git rev-parse --show-toplevel 2>/dev/null)
-            if [ -z "$top" ]; then
-                # Try finding toplevel from target's directory
-                if [ -e "$target" ]; then
-                    top=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
-                fi
-            fi
-            if [ -n "$top" ]; then
-                printf "set-option buffer kiki_tree_git_repo %%{%s}\n" "$top"
-            fi
-
             repo_dir=""
-            if [ -n "$top" ]; then
-                repo_dir="$top"
-            elif [ -e "$target" ]; then
-                repo_dir=$(dirname "$target")
+            if [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ]; then
+                repo_dir="$kak_opt_kiki_tree_git_repo"
+            fi
+            if [ -z "$repo_dir" ]; then
+                repo_dir=$(git rev-parse --show-toplevel 2>/dev/null)
+            fi
+            if [ -z "$repo_dir" ] && [ -e "$target" ]; then
+                repo_dir=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
             fi
 
             if [ -n "$repo_dir" ]; then
+                printf "set-option buffer kiki_tree_git_repo %%{%s}\n" "$repo_dir"
                 actual_porc=$(git -C "$repo_dir" status --porcelain -- "$target" 2>/dev/null | head -n1)
             else
                 actual_porc=$(git status --porcelain -- "$target" 2>/dev/null | head -n1)
@@ -132,12 +139,15 @@ define-command -override -hidden -params 1 \
                     "A "*|"M "*|"D "*|"R "*|"C "*) status_type="staged" ;;
                     " M"|" D"|" U") status_type="modified" ;;
                     "MM"|"AM") status_type="staged+modified" ;;
+                    *) status_type="modified" ;;
                 esac
             else
                 # If target exists and is tracked or clean
                 if [ -n "$repo_dir" ] && git -C "$repo_dir" ls-files --error-unmatch "$target" >/dev/null 2>&1; then
                     status_type="clean"
                     is_clean_file=1
+                elif [ -e "$target" ]; then
+                    status_type="untracked"
                 fi
             fi
 
@@ -152,26 +162,37 @@ define-command -override -hidden -params 1 \
                 prefix_info="{yellow}${repo_disp}{default} "
             fi
 
+            # Compute display path: relative to repo_dir if possible, else basename
+            target_disp="$target"
+            _ref="${repo_dir:-$top}"
+            if [ -n "$_ref" ]; then
+                _ref="${_ref%/}/"
+                case "$target" in
+                    "$_ref"*) target_disp="./${target#"$_ref"}" ;;
+                esac
+            fi
+            [ "$target_disp" = "$target" ] && target_disp="$(basename "$target")"
+
             if [ "$is_clean_file" -eq 1 ]; then
                 printf "enter-user-mode git\n"
-                printf "echo -markup \"{cyan}[kiki-git]{default} %sFile (clean): {green}%s{default}\"\n" "$prefix_info" "$target"
+                printf "echo -markup \"{cyan}[kiki-git]{default} %sFile (clean): {green}%s{default}\"\n" "$prefix_info" "$target_disp"
             else
                 case "$status_type" in
                     "untracked")
                         printf "enter-user-mode untracked\n"
-                        printf "echo -markup \"{cyan}[kiki-git]{default} %sUntracked: {magenta}%s{default}\"\n" "$prefix_info" "$target"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sUntracked: {magenta}%s{default}\"\n" "$prefix_info" "$target_disp"
                         ;;
                     "staged")
                         printf "enter-user-mode staged\n"
-                        printf "echo -markup \"{cyan}[kiki-git]{default} %sStaged: {green}%s{default}\"\n" "$prefix_info" "$target"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sStaged: {green}%s{default}\"\n" "$prefix_info" "$target_disp"
                         ;;
                     "staged+modified")
                         printf "enter-user-mode staged-modified\n"
-                        printf "echo -markup \"{cyan}[kiki-git]{default} %sStaged+Modified: {green}%s{default}\"\n" "$prefix_info" "$target"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sStaged+Modified: {green}%s{default}\"\n" "$prefix_info" "$target_disp"
                         ;;
                     *)
                         printf "enter-user-mode modified\n"
-                        printf "echo -markup \"{cyan}[kiki-git]{default} %sModified: {yellow}%s{default}\"\n" "$prefix_info" "$target"
+                        printf "echo -markup \"{cyan}[kiki-git]{default} %sModified: {yellow}%s{default}\"\n" "$prefix_info" "$target_disp"
                         ;;
                 esac
             fi

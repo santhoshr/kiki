@@ -334,7 +334,15 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 4. Git status buffer or git status lines -> rotate forward to next file
+            # 4. Tree buffer (*kiki-file-tree* / *.kikitree) -> rotate across modified files
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-rotate-modified-file 1 }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+
+            # 5. Git status buffer or git status lines -> rotate forward to next file
             case "$kak_bufname" in
                 \*kiki-fifo-git*|\*kiki-fifo-*git*)
                     printf '%s %%{ kiki-git-rotate-file 1 }\n' "$eval_cmd"
@@ -348,7 +356,7 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 5. Tree node (+ dir/ or - file) or filesystem path
+            # 6. Tree node (+ dir/ or - file) or filesystem path
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
                 printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
                 exit 0
@@ -357,7 +365,7 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 6. Check if current word/URI is an existing path
+            # 7. Check if current word/URI is an existing path
             uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
             case "$uri" in
                 "~"/*) uri_exp="${HOME}/${uri#"~"/}" ;;
@@ -372,7 +380,7 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 7. Fallback: native Kakoune tab key
+            # 8. Fallback: native Kakoune tab key
             printf '%s %%{ execute-keys <tab> }\n' "$eval_cmd"
         }
     }}
@@ -385,7 +393,15 @@ define-command -override -hidden \
             eval_cmd="evaluate-commands"
             [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-            # 1. Git status buffer or git status lines -> rotate backward to previous file
+            # 1. Tree buffer (*kiki-file-tree* / *.kikitree) -> rotate backward across modified files
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-rotate-modified-file -1 }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+
+            # 2. Git status buffer or git status lines -> rotate backward to previous file
             case "$kak_bufname" in
                 \*kiki-fifo-git*|\*kiki-fifo-*git*)
                     printf '%s %%{ kiki-git-rotate-file -1 }\n' "$eval_cmd"
@@ -399,19 +415,13 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 2. Tree buffer or tree node lines -> step back / parent
-            case "$kak_bufname" in
-                \*kiki-file-tree\*|*.kikitree)
-                    printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
-                    exit 0
-                    ;;
-            esac
+            # 3. Tree node lines in non-tree buffers -> step back / parent
             if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
                 printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
                 exit 0
             fi
 
-            # 3. Fallback: native Kakoune s-tab key
+            # 4. Fallback: native Kakoune s-tab key
             printf '%s %%{ execute-keys <s-tab> }\n' "$eval_cmd"
         }
     }}

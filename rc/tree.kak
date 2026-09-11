@@ -1766,6 +1766,216 @@ define-command -override -hidden -params 2 \
         }'
     }}
 
+# Rotate among modified/changed files in the file tree (direction 1 = next, -1 = prev)
+define-command -override -hidden -params 1 \
+    kiki-tree-rotate-modified-file %{ evaluate-commands %sh{
+        dir="$1"
+        tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        printf 'write -force "%s"\n' "$tmp_file"
+        printf 'kiki-tree-rotate-modified-file-do "%s" "%s"\n' "$dir" "$tmp_file"
+    }}
+
+define-command -override -hidden -params 2 \
+    kiki-tree-rotate-modified-file-do %{ evaluate-commands %sh{
+        dir="$1"
+        tmp_file="$2"
+        cur="$kak_cursor_line"
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        # 1. Collect roots and find git repo status
+        status_dump=$(mktemp "${TMPDIR:-/tmp}"/kiki-git-status.XXXXXXXX)
+        while IFS= read -r line; do
+            case "$line" in
+                "- "*)
+                    r="${line#- }"
+                    r="${r%/}"
+                    case "$r" in
+                        "~"/*) r="${HOME}/${r#"~"/}" ;;
+                        "~") r="${HOME}" ;;
+                        /*) ;;
+                        *) r="${PWD}/${r}" ;;
+                    esac
+                    [ -d "$r" ] && top=$(git -C "$r" rev-parse --show-toplevel 2>/dev/null)
+                    if [ -n "$top" ]; then
+                        git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do
+                            f=$(printf '%s\n' "$s" | cut -c4- | sed -e 's/.*-> //')
+                            printf '%s/%s\n' "$top" "$f"
+                        done >> "$status_dump"
+                    fi
+                    ;;
+            esac
+        done < "$tmp_file"
+
+        # awk script extracts all file paths in tree and checks git status
+        res=$(awk -v cur="$cur" -v dir="$dir" -v tmp_file="$tmp_file" -v status_file="$status_dump" -v home="$HOME" -v pwd="$PWD" '
+        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
+            if (!tabstop) tabstop = 4
+            res = ""
+            col = 0
+            len = length(str)
+            for (i = 1; i <= len; i++) {
+                c = substr(str, i, 1)
+                if (c == "\t") {
+                    sp = tabstop - (col % tabstop)
+                    for (k = 1; k <= sp; k++) res = res " "
+                    col += sp
+                } else {
+                    res = res c
+                    col += 1
+                }
+            }
+            return res
+        }
+        function get_indent(str,    s, ind, len, i, rest) {
+            s = expand_tabs(str, 4)
+            ind = 0
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) == " ") ind += 1
+                else break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- )/) {
+                rest = substr(rest, 3)
+                while (substr(rest, 1, 1) == " ") {
+                    ind += 1
+                    rest = substr(rest, 2)
+                }
+            }
+            return ind
+        }
+        function get_clean_name(str,    s, len, i, rest) {
+            s = expand_tabs(str, 4)
+            len = length(s)
+            for (i = 1; i <= len; i++) {
+                if (substr(s, i, 1) != " ") break
+            }
+            rest = substr(s, i)
+            while (rest ~ /^(\+ |- | )/) {
+                if (rest ~ /^ /) rest = substr(rest, 2)
+                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
+            }
+            if (rest != "/") sub(/\/$/, "", rest)
+            return rest
+        }
+        function expand_path(path,    p) {
+            if (path ~ /^~\//) p = home "/" substr(path, 3);
+            else if (path == "~") p = home;
+            else if (path !~ /^\//) p = pwd "/" path;
+            else p = path;
+            return p;
+        }
+        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
+            t_line = lines[target_idx]
+            t_indent = get_indent(t_line)
+            clean_t = get_clean_name(t_line)
+            if (t_indent == 0) return expand_path(clean_t)
+            path_count = 1
+            path_arr[path_count] = clean_t
+            req_indent = t_indent
+            for (i = target_idx - 1; i >= 1; i--) {
+                ind = get_indent(lines[i])
+                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
+                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
+                    path_count++
+                    path_arr[path_count] = get_clean_name(lines[i])
+                    req_indent = ind
+                    if (ind == 0) break
+                }
+            }
+            root_path = expand_path(path_arr[path_count])
+            full_p = root_path
+            for (i = path_count - 1; i >= 1; i--) {
+                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
+            }
+            return full_p
+        }
+
+        BEGIN {
+            while ((getline s_line < status_file) > 0) {
+                if (s_line != "") mod_set[s_line] = 1
+            }
+            close(status_file)
+            system("rm -f \"" status_file "\"")
+
+            total = 0
+            while ((getline line < tmp_file) > 0) {
+                total++
+                lines[total] = line
+            }
+            close(tmp_file)
+            system("rm -f \"" tmp_file "\"")
+
+            if (total == 0) { print "0|"; exit }
+
+            mod_count = 0
+            for (i = 1; i <= total; i++) {
+                t_line = lines[i]
+                if (t_line ~ /^[ \t]*#/ || t_line ~ /^[ \t]*$/) continue
+                # Skip directory entries ending in /
+                if (t_line ~ /\/[ \t]*$/) continue
+                clean = get_clean_name(t_line)
+                if (clean == "") continue
+                full_p = resolve_full_path(lines, i)
+                if (mod_set[full_p] == 1) {
+                    mod_count++
+                    mod_lines[mod_count] = i
+                    mod_paths[mod_count] = full_p
+                }
+            }
+
+            if (mod_count == 0) { print "0|"; exit }
+
+            cur_idx = 0
+            for (i = 1; i <= mod_count; i++) {
+                if (mod_lines[i] == cur) {
+                    cur_idx = i
+                    break
+                }
+            }
+
+            if (dir > 0) {
+                if (cur_idx > 0) {
+                    next_idx = cur_idx + 1
+                    if (next_idx > mod_count) next_idx = 1
+                } else {
+                    next_idx = 1
+                    for (i = 1; i <= mod_count; i++) {
+                        if (mod_lines[i] > cur) {
+                            next_idx = i
+                            break
+                        }
+                    }
+                }
+            } else {
+                if (cur_idx > 0) {
+                    next_idx = cur_idx - 1
+                    if (next_idx < 1) next_idx = mod_count
+                } else {
+                    next_idx = mod_count
+                    for (i = mod_count; i >= 1; i--) {
+                        if (mod_lines[i] < cur) {
+                            next_idx = i
+                            break
+                        }
+                    }
+                }
+            }
+
+            print mod_lines[next_idx] "|" mod_paths[next_idx]
+        }')
+
+        target_line="${res%%|*}"
+        target_path="${res#*|}"
+
+        if [ "$target_line" -gt 0 ] 2>/dev/null && [ -n "$target_path" ]; then
+            printf '%s %%{ select %s.1,%s.1; kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$target_line" "$target_line" "$target_path"
+        else
+            printf '%s %%{ echo -markup "{yellow}[kiki-tree]{default} No modified files in file tree" }\n' "$eval_cmd"
+        fi
+    }}
+
 # Close tree buffers
 define-command -override -docstring "kiki-close-tree-buffers: close all file tree buffers" \
     kiki-close-tree-buffers %{

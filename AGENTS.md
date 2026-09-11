@@ -83,8 +83,8 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Keybindings in Kiki Buffers:**
   - `<ret>` / `<enter>`: Execute command via FIFO (`kiki-fifo`), open file tree on directories, open file on files, trigger Git action popup on git status lines, toggle expand/collapse in file tree, or open topic.
-  - `<tab>`: Execute command inline (`kiki-inline`), open file tree on directories / step into folder, rotate next Git status file (triggering action popup), open file on files, or open topic.
-  - `<s-tab>`: Step back in file tree (`kiki-tree-parent`) or rotate previous Git status file (triggering action popup).
+  - `<tab>`: Execute command inline (`kiki-inline`), rotate next modified file in file tree (triggering action popup), open file tree on directories / step into folder, rotate next Git status file (triggering action popup), open file on files, or open topic.
+  - `<s-tab>`: Rotate previous modified file in file tree (triggering action popup), step back in file tree (`kiki-tree-parent`), or rotate previous Git status file (triggering action popup).
   - `O`: Smart contextual open (topic in topic list, file tree if path, FIFO if command, fallback native `O`).
   - `p`: Open or replace buffer view in connected Kakoune preview client (`preview`).
   - `P`: Change directory to folder path or parent of file path.

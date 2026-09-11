@@ -2030,6 +2030,46 @@ def get_visible_line_for_path(lines_arr, target_path):
         return best_idx + 1, True
     return 0, False
 
+def is_tree_line(s):
+    if not s.strip() or s.lstrip().startswith('#'):
+        return False
+    return s.lstrip().startswith('+ ') or s.lstrip().startswith('- ')
+
+def find_tree_bounds(lines_arr, cur_line):
+    cur_idx = cur_line - 1
+    if cur_idx < 0 or cur_idx >= len(lines_arr):
+        return 0, len(lines_arr)
+    root_idx = cur_idx
+    if is_tree_line(lines_arr[root_idx]):
+        if get_indent(lines_arr[root_idx]) > 0:
+            for i in range(cur_idx - 1, -1, -1):
+                if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                    root_idx = i
+                    break
+    else:
+        for i in range(cur_idx - 1, -1, -1):
+            if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                root_idx = i
+                break
+        else:
+            for i in range(cur_idx, len(lines_arr)):
+                if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                    root_idx = i
+                    break
+    if not is_tree_line(lines_arr[root_idx]) or get_indent(lines_arr[root_idx]) != 0:
+        return 0, len(lines_arr)
+    tree_end = root_idx + 1
+    while tree_end < len(lines_arr) and is_tree_line(lines_arr[tree_end]) and get_indent(lines_arr[tree_end]) > 0:
+        tree_end += 1
+    return root_idx, tree_end
+
+# Confine rotation to the file tree branch around the cursor
+tree_start, tree_end = find_tree_bounds(lines, cur)
+tree_slice = lines[tree_start:tree_end]
+
+if not tree_slice:
+    clean_exit('0||')
+
 # Normalize status files list
 norm_status = []
 for p in status_lines:
@@ -2037,12 +2077,13 @@ for p in status_lines:
     if ep not in norm_status:
         norm_status.append(ep)
 
-# Build sorted modified entries
+# Build sorted modified entries strictly within this file tree branch
 mod_entries = []
 for p in norm_status:
-    ln, is_collapsed = get_visible_line_for_path(lines, p)
+    ln, is_collapsed = get_visible_line_for_path(tree_slice, p)
     if ln > 0:
-        mod_entries.append((ln, p, is_collapsed))
+        buf_ln = tree_start + ln
+        mod_entries.append((buf_ln, p, is_collapsed))
 
 if not mod_entries:
     clean_exit('0||')
@@ -2075,14 +2116,17 @@ else:
                 break
 
 chosen_target = mod_entries[next_idx][1]
-orig_len = len(lines)
-final_idx = reveal_target_path(lines, chosen_target)
+orig_len = len(tree_slice)
+final_slice_idx = reveal_target_path(tree_slice, chosen_target)
 
-if final_idx is None:
+if final_slice_idx is None:
     clean_exit('0||')
 
+target_line = tree_start + final_slice_idx + 1
 tree_updated_file = ''
-if len(lines) != orig_len:
+
+if len(tree_slice) != orig_len:
+    lines = lines[:tree_start] + tree_slice + lines[tree_end:]
     try:
         with open(out_tree, 'w', encoding='utf-8') as f:
             for line in lines:
@@ -2091,7 +2135,6 @@ if len(lines) != orig_len:
     except Exception:
         tree_updated_file = ''
 
-target_line = final_idx + 1
 clean_exit(f"{target_line}|{chosen_target}|{tree_updated_file}")
 EOF
 )

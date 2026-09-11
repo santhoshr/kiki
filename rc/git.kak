@@ -1289,12 +1289,40 @@ define-command -override -hidden -params 1 \
             print "NONE"
         }' "$tmp_buf")
 
-        rm -f "$tmp_buf"
-
+        # If no git status block found, check if we are in a file tree buffer
         if [ "$res" = "NONE" ] || [ -z "$res" ]; then
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+            # Check if current line or buffer is a file tree
+            is_tree=0
+            if [ "$kak_cursor_line" -ge 1 ] 2>/dev/null; then
+                cur_line_text=$(sed -n "${kak_cursor_line}p" "$tmp_buf" 2>/dev/null)
+                case "$cur_line_text" in
+                    [+-]\ *|\ *[+-]\ *|\	*[+-]\ *) is_tree=1 ;;
+                esac
+            fi
+            if [ "$is_tree" -eq 0 ] && grep -Eq '^[ \t]*[+-][ \t]' "$tmp_buf" 2>/dev/null; then
+                is_tree=1
+            fi
+
+            target="$kak_opt_kiki_git_target"
+            rm -f "$tmp_buf"
+
+            if [ "$is_tree" -eq 1 ]; then
+                if [ -n "$target" ]; then
+                    printf '%s %%{ kiki-tree-refresh; kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$target"
+                else
+                    printf '%s %%{ kiki-tree-refresh }\n' "$eval_cmd"
+                fi
+                exit 0
+            fi
+
             printf 'echo -markup "{yellow}kiki-git: no git status block found at cursor"\n'
             exit 0
         fi
+
+        rm -f "$tmp_buf"
 
         cmd=$(printf '%s\n' "$res" | cut -d'|' -f1)
         start_line=$(printf '%s\n' "$res" | cut -d'|' -f2)

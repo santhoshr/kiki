@@ -131,7 +131,7 @@ define-command -override -hidden \
                     ;;
             esac
             if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
-               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+|^[MADRC?U][[:space:]]+' \
                || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
                 printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
                 exit 0
@@ -334,13 +334,14 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 4. Tree buffer (*kiki-file-tree* / *.kikitree) -> rotate across modified files
-            case "$kak_bufname" in
-                \*kiki-file-tree\*|*.kikitree)
-                    printf '%s %%{ kiki-tree-rotate-modified-file 1 }\n' "$eval_cmd"
-                    exit 0
-                    ;;
-            esac
+            # 4. Tree node (+ dir/ or - file) or filesystem path
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
+                exit 0
+            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
+                exit 0
+            fi
 
             # 5. Git status buffer or git status lines -> rotate forward to next file
             case "$kak_bufname" in
@@ -350,20 +351,19 @@ define-command -override -hidden \
                     ;;
             esac
             if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
-               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+|^[MADRC?U][[:space:]]+' \
                || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
                 printf '%s %%{ kiki-git-rotate-file 1 }\n' "$eval_cmd"
                 exit 0
             fi
 
-            # 6. Tree node (+ dir/ or - file) or filesystem path
-            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
-                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
-                exit 0
-            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
-                printf '%s %%{ kiki-tree-step-into }\n' "$eval_cmd"
-                exit 0
-            fi
+            # 6. Tree buffer (*kiki-file-tree* / *.kikitree) fallback -> rotate across modified files
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-rotate-modified-file 1 }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
 
             # 7. Check if current word/URI is an existing path
             uri=$(printf "%s\n" "$trimmed" | awk '{print $1}')
@@ -393,13 +393,14 @@ define-command -override -hidden \
             eval_cmd="evaluate-commands"
             [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-            # 1. Tree buffer (*kiki-file-tree* / *.kikitree) -> rotate backward across modified files
-            case "$kak_bufname" in
-                \*kiki-file-tree\*|*.kikitree)
-                    printf '%s %%{ kiki-tree-rotate-modified-file -1 }\n' "$eval_cmd"
-                    exit 0
-                    ;;
-            esac
+            # 1. Tree node lines -> step back / parent
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
+                exit 0
+            elif printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
+                exit 0
+            fi
 
             # 2. Git status buffer or git status lines -> rotate backward to previous file
             case "$kak_bufname" in
@@ -409,17 +410,19 @@ define-command -override -hidden \
                     ;;
             esac
             if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
-               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+|^[MADRC?U][[:space:]]+' \
                || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
                 printf '%s %%{ kiki-git-rotate-file -1 }\n' "$eval_cmd"
                 exit 0
             fi
 
-            # 3. Tree node lines in non-tree buffers -> step back / parent
-            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
-                printf '%s %%{ kiki-tree-parent }\n' "$eval_cmd"
-                exit 0
-            fi
+            # 3. Tree buffer (*kiki-file-tree* / *.kikitree) fallback -> rotate backward across modified files
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-rotate-modified-file -1 }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
 
             # 4. Fallback: native Kakoune s-tab key
             printf '%s %%{ execute-keys <s-tab> }\n' "$eval_cmd"
@@ -1051,19 +1054,7 @@ define-command -override -hidden \
             eval_cmd="evaluate-commands"
             [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-            # 1. Tree buffer (*kiki-file-tree* / *.kikitree) or tree node lines (+ dir/ or - file)
-            case "$kak_bufname" in
-                \*kiki-file-tree\*|*.kikitree)
-                    printf '%s %%{ kiki-tree-resolve-path kiki-tree-git-action }\n' "$eval_cmd"
-                    exit 0
-                    ;;
-            esac
-            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
-                printf '%s %%{ kiki-tree-resolve-path kiki-tree-git-action }\n' "$eval_cmd"
-                exit 0
-            fi
-
-            # 2. Git status lines
+            # 1. Git status lines (files, headers, hints)
             case "$kak_bufname" in
                 \*kiki-fifo-git*|\*kiki-fifo-*git*)
                     printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
@@ -1071,11 +1062,25 @@ define-command -override -hidden \
                     ;;
             esac
             if printf "%s\n" "$trimmed" | grep -Eq '^(modified:|new file:|deleted:|renamed:|both modified:)[[:space:]]+' \
-               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+' \
+               || printf "%s\n" "$trimmed" | grep -Eq '^[MADRC?U ][MADRC?U ][[:space:]]+|^[MADRC?U][[:space:]]+' \
                || printf "%s\n" "$trimmed" | grep -Eq '^(On branch|Your branch|Changes to be committed:|Changes not staged|Untracked files:|Unmerged paths:|HEAD detached|rebase in progress|interactive rebase|no changes added|nothing to commit|nothing added to commit|\(use "git|\(use git|## )'; then
                 printf '%s %%{ kiki-git-line-action %%{%s} }\n' "$eval_cmd" "$trimmed"
                 exit 0
             fi
+
+            # 2. Tree node lines (+ dir/ or - file)
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]"; then
+                printf '%s %%{ kiki-tree-resolve-path kiki-tree-git-action }\n' "$eval_cmd"
+                exit 0
+            fi
+
+            # 3. Tree buffer (*kiki-file-tree* / *.kikitree) fallback -> resolve path if on a tree path line
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-resolve-path kiki-tree-git-action }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
 
             # 3. If in a non-kiki buffer that is backed by a real file, prioritize the buffer file
             case "$kak_bufname" in

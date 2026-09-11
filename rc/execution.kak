@@ -153,12 +153,12 @@ define-command -override -hidden -params 1 \
         buffer_name="*kiki-fifo-${cmd_name}-${timestamp}*"
 
         printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
-            edit! -fifo ${output} -scroll ${buffer_name}
+            edit! -fifo %{$output} -scroll %{$buffer_name}
             set-option buffer filetype kiki
             set-option buffer kiki_buffer_type kiki-buffer
             kiki-set-modeline kiki-buffer
             hook -always -once buffer BufCloseFifo .* %{
-                nop %sh{ rm -r $(dirname ${output}) }
+                nop %sh{ rm -r -- \"$(dirname -- \"$output\")\" }
                 try %{ ansi-render }
             }
         }"

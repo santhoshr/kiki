@@ -1787,14 +1787,15 @@ define-command -override -hidden -params 2 \
         status_dump=$(mktemp "${TMPDIR:-/tmp}"/kiki-git-status.XXXXXXXX)
         while IFS= read -r line; do
             case "$line" in
-                "- "*)
-                    r="${line#- }"
+                "- "*|"+ "*)
+                    r="${line#[+-] }"
                     r="${r%/}"
                     case "$r" in
                         "~"/*) r="${HOME}/${r#"~"/}" ;;
                         "~") r="${HOME}" ;;
                         /*) ;;
-                        *) r="${PWD}/${r}" ;;
+                        "."|"./") r="${PWD}" ;;
+                        *) r="${PWD}/${r#./}" ;;
                     esac
                     [ -d "$r" ] && top=$(git -C "$r" rev-parse --show-toplevel 2>/dev/null)
                     if [ -n "$top" ]; then
@@ -1806,6 +1807,19 @@ define-command -override -hidden -params 2 \
                     ;;
             esac
         done < "$tmp_file"
+
+        # If no roots matched in tree lines, check buffer repo or PWD
+        if [ ! -s "$status_dump" ]; then
+            top=""
+            [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && top="$kak_opt_kiki_tree_git_repo"
+            [ -z "$top" ] && top=$(git rev-parse --show-toplevel 2>/dev/null)
+            if [ -n "$top" ]; then
+                git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do
+                    f=$(printf '%s\n' "$s" | cut -c4- | sed -e 's/.*-> //')
+                    printf '%s/%s\n' "$top" "$f"
+                done >> "$status_dump"
+            fi
+        fi
 
         # awk script extracts all file paths in tree and checks git status
         res=$(awk -v cur="$cur" -v dir="$dir" -v tmp_file="$tmp_file" -v status_file="$status_dump" -v home="$HOME" -v pwd="$PWD" '
@@ -1862,6 +1876,8 @@ define-command -override -hidden -params 2 \
         function expand_path(path,    p) {
             if (path ~ /^~\//) p = home "/" substr(path, 3);
             else if (path == "~") p = home;
+            else if (path == "." || path == "./") p = pwd;
+            else if (path ~ /^\.\//) p = pwd "/" substr(path, 3);
             else if (path !~ /^\//) p = pwd "/" path;
             else p = path;
             return p;

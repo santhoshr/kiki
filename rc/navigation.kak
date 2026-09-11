@@ -427,8 +427,8 @@ define-command -override -hidden -params 1 \
             exit 0
         fi
 
-        escaped_path=$(printf '%s' "$path" | sed 's/"/\\"/g')
-        printf 'execute-keys %%{;o<esc>!ls -alh "%s"<ret>}\n' "$escaped_path"
+        quoted_path=$(printf '%s' "$path" | sed "s/'/'\\\\''/g")
+        printf "execute-keys %%{;o<esc>!ls -alh '%s'<ret>}\n" "$quoted_path"
     }}
 
 # List available topic files

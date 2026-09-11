@@ -1821,173 +1821,294 @@ define-command -override -hidden -params 2 \
             fi
         fi
 
-        # awk script extracts all file paths in tree and checks git status
-        res=$(awk -v cur="$cur" -v dir="$dir" -v tmp_file="$tmp_file" -v status_file="$status_dump" -v home="$HOME" -v pwd="$PWD" '
-        function expand_tabs(str, tabstop,    res, len, i, c, col, sp, k) {
-            if (!tabstop) tabstop = 4
-            res = ""
-            col = 0
-            len = length(str)
-            for (i = 1; i <= len; i++) {
-                c = substr(str, i, 1)
-                if (c == "\t") {
-                    sp = tabstop - (col % tabstop)
-                    for (k = 1; k <= sp; k++) res = res " "
-                    col += sp
-                } else {
-                    res = res c
-                    col += 1
-                }
-            }
-            return res
-        }
-        function get_indent(str,    s, ind, len, i, rest) {
-            s = expand_tabs(str, 4)
-            ind = 0
-            len = length(s)
-            for (i = 1; i <= len; i++) {
-                if (substr(s, i, 1) == " ") ind += 1
-                else break
-            }
-            rest = substr(s, i)
-            while (rest ~ /^(\+ |- )/) {
-                rest = substr(rest, 3)
-                while (substr(rest, 1, 1) == " ") {
-                    ind += 1
-                    rest = substr(rest, 2)
-                }
-            }
-            return ind
-        }
-        function get_clean_name(str,    s, len, i, rest) {
-            s = expand_tabs(str, 4)
-            len = length(s)
-            for (i = 1; i <= len; i++) {
-                if (substr(s, i, 1) != " ") break
-            }
-            rest = substr(s, i)
-            while (rest ~ /^(\+ |- | )/) {
-                if (rest ~ /^ /) rest = substr(rest, 2)
-                else if (rest ~ /^(\+ |- )/) rest = substr(rest, 3)
-            }
-            if (rest != "/") sub(/\/$/, "", rest)
-            return rest
-        }
-        function expand_path(path,    p) {
-            if (path ~ /^~\//) p = home "/" substr(path, 3);
-            else if (path == "~") p = home;
-            else if (path == "." || path == "./") p = pwd;
-            else if (path ~ /^\.\//) p = pwd "/" substr(path, 3);
-            else if (path !~ /^\//) p = pwd "/" path;
-            else p = path;
-            return p;
-        }
-        function resolve_full_path(lines, target_idx,    t_line, t_indent, clean_t, path_count, path_arr, req_indent, i, ind, root_path, full_p) {
-            t_line = lines[target_idx]
-            t_indent = get_indent(t_line)
-            clean_t = get_clean_name(t_line)
-            if (t_indent == 0) return expand_path(clean_t)
-            path_count = 1
-            path_arr[path_count] = clean_t
-            req_indent = t_indent
-            for (i = target_idx - 1; i >= 1; i--) {
-                ind = get_indent(lines[i])
-                if (ind < req_indent && lines[i] !~ /^[ \t]*#/) {
-                    if (ind > 0 && lines[i] !~ /\/[ \t]*$/) continue
-                    path_count++
-                    path_arr[path_count] = get_clean_name(lines[i])
-                    req_indent = ind
-                    if (ind == 0) break
-                }
-            }
-            root_path = expand_path(path_arr[path_count])
-            full_p = root_path
-            for (i = path_count - 1; i >= 1; i--) {
-                full_p = (full_p == "/") ? "/" path_arr[i] : (full_p "/" path_arr[i])
-            }
-            return full_p
-        }
+        # Script extracts modified files, picks next target according to direction,
+        # and expands any collapsed parent directories along the path so the target file is visible.
+        out_tree=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        hidden="${kak_opt_kiki_tree_show_hidden:-false}"
 
-        BEGIN {
-            while ((getline s_line < status_file) > 0) {
-                if (s_line != "") mod_set[s_line] = 1
-            }
-            close(status_file)
-            system("rm -f \"" status_file "\"")
+        res=$(python3 - "$cur" "$dir" "$tmp_file" "$status_dump" "$out_tree" "$hidden" "$HOME" "$PWD" << 'EOF'
+import sys, os
 
-            total = 0
-            while ((getline line < tmp_file) > 0) {
-                total++
-                lines[total] = line
-            }
-            close(tmp_file)
-            system("rm -f \"" tmp_file "\"")
+cur = int(sys.argv[1])
+direction = int(sys.argv[2])
+tmp_file = sys.argv[3]
+status_file = sys.argv[4]
+out_tree = sys.argv[5]
+hidden = (sys.argv[6].lower() == 'true')
+home = sys.argv[7]
+pwd = sys.argv[8]
 
-            if (total == 0) { print "0|"; exit }
+def clean_exit(res_str):
+    for f in (tmp_file, status_file):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    print(res_str)
+    sys.exit(0)
 
-            mod_count = 0
-            for (i = 1; i <= total; i++) {
-                t_line = lines[i]
-                if (t_line ~ /^[ \t]*#/ || t_line ~ /^[ \t]*$/) continue
-                # Skip directory entries ending in /
-                if (t_line ~ /\/[ \t]*$/) continue
-                clean = get_clean_name(t_line)
-                if (clean == "") continue
-                full_p = resolve_full_path(lines, i)
-                if (mod_set[full_p] == 1) {
-                    mod_count++
-                    mod_lines[mod_count] = i
-                    mod_paths[mod_count] = full_p
-                }
-            }
+try:
+    with open(tmp_file, 'r', encoding='utf-8', errors='replace') as f:
+        lines = [line.rstrip('\r\n') for line in f]
+except Exception:
+    clean_exit('0||')
 
-            if (mod_count == 0) { print "0|"; exit }
+try:
+    with open(status_file, 'r', encoding='utf-8', errors='replace') as f:
+        status_lines = [line.rstrip('\r\n') for line in f if line.strip()]
+except Exception:
+    status_lines = []
 
-            cur_idx = 0
-            for (i = 1; i <= mod_count; i++) {
-                if (mod_lines[i] == cur) {
-                    cur_idx = i
+if not lines:
+    clean_exit('0||')
+
+def expand_tabs(s, tabstop=4):
+    res = []
+    col = 0
+    for c in s:
+        if c == '\t':
+            sp = tabstop - (col % tabstop)
+            res.append(' ' * sp)
+            col += sp
+        else:
+            res.append(c)
+            col += 1
+    return ''.join(res)
+
+def get_indent(s):
+    s = expand_tabs(s)
+    ind = len(s) - len(s.lstrip(' '))
+    rest = s.lstrip(' ')
+    while rest.startswith('+ ') or rest.startswith('- '):
+        rest = rest[2:]
+        spaces = len(rest) - len(rest.lstrip(' '))
+        ind += spaces
+        rest = rest.lstrip(' ')
+    return ind
+
+def get_clean_name(s):
+    s = expand_tabs(s).strip()
+    while s.startswith('+ ') or s.startswith('- ') or s.startswith(' '):
+        if s.startswith(' '):
+            s = s[1:]
+        elif s.startswith('+ ') or s.startswith('- '):
+            s = s[2:]
+    if s != '/' and s.endswith('/'):
+        s = s[:-1]
+    return s
+
+def expand_path(p):
+    if p.startswith('~/'):
+        p = os.path.join(home, p[2:])
+    elif p == '~':
+        p = home
+    elif p in ('.', './'):
+        p = pwd
+    elif p.startswith('./'):
+        p = os.path.join(pwd, p[2:])
+    elif not p.startswith('/'):
+        p = os.path.join(pwd, p)
+    try:
+        return os.path.realpath(p)
+    except Exception:
+        return p
+
+def resolve_full_path(lines_arr, idx):
+    line = lines_arr[idx]
+    ind = get_indent(line)
+    clean = get_clean_name(line)
+    if ind == 0:
+        return expand_path(clean)
+    path_arr = [clean]
+    req_ind = ind
+    for i in range(idx - 1, -1, -1):
+        l = lines_arr[i]
+        if not l.strip() or l.lstrip().startswith('#'):
+            continue
+        curr_ind = get_indent(l)
+        if curr_ind < req_ind:
+            if curr_ind > 0 and not l.strip().endswith('/'):
+                continue
+            path_arr.append(get_clean_name(l))
+            req_ind = curr_ind
+            if curr_ind == 0:
+                break
+    root = expand_path(path_arr[-1])
+    full = root
+    for comp in reversed(path_arr[:-1]):
+        full = os.path.join(full, comp)
+    return full
+
+def expand_directory_node(lines_arr, node_idx):
+    t_line = lines_arr[node_idx]
+    t_ind = get_indent(t_line)
+    clean_t = get_clean_name(t_line)
+    full_p = resolve_full_path(lines_arr, node_idx)
+
+    sp_str = ' ' * t_ind
+    disp_name = full_p if t_ind == 0 else clean_t
+    if not disp_name.endswith('/'):
+        disp_name += '/'
+    lines_arr[node_idx] = f'{sp_str}- {disp_name}'
+
+    try:
+        entries = sorted(os.listdir(full_p), key=lambda x: x.lower())
+    except Exception:
+        entries = []
+    dirs = []
+    files = []
+    for e in entries:
+        if not hidden and e.startswith('.'):
+            continue
+        ep = os.path.join(full_p, e)
+        if os.path.isdir(ep):
+            dirs.append(e)
+        else:
+            files.append(e)
+    child_ind_str = ' ' * (t_ind + 2)
+    child_lines = []
+    for d in dirs:
+        child_lines.append(f'{child_ind_str}+ {d}/')
+    for f in files:
+        child_lines.append(f'{child_ind_str}- {f}')
+
+    lines_arr[node_idx+1:node_idx+1] = child_lines
+
+def reveal_target_path(lines_arr, target_path):
+    target_path = expand_path(target_path)
+    while True:
+        found_target_idx = None
+        for i, l in enumerate(lines_arr):
+            if l.strip() and not l.lstrip().startswith('#') and not l.strip().endswith('/'):
+                if resolve_full_path(lines_arr, i) == target_path:
+                    found_target_idx = i
                     break
-                }
-            }
+        if found_target_idx is not None:
+            return found_target_idx
 
-            if (dir > 0) {
-                if (cur_idx > 0) {
-                    next_idx = cur_idx + 1
-                    if (next_idx > mod_count) next_idx = 1
-                } else {
-                    next_idx = 1
-                    for (i = 1; i <= mod_count; i++) {
-                        if (mod_lines[i] > cur) {
-                            next_idx = i
-                            break
-                        }
-                    }
-                }
-            } else {
-                if (cur_idx > 0) {
-                    next_idx = cur_idx - 1
-                    if (next_idx < 1) next_idx = mod_count
-                } else {
-                    next_idx = mod_count
-                    for (i = mod_count; i >= 1; i--) {
-                        if (mod_lines[i] < cur) {
-                            next_idx = i
-                            break
-                        }
-                    }
-                }
-            }
+        best_dir_idx = None
+        best_dir_path = ''
+        for i, l in enumerate(lines_arr):
+            if l.strip() and not l.lstrip().startswith('#') and (l.strip().endswith('/') or get_indent(l) == 0):
+                dpath = resolve_full_path(lines_arr, i)
+                if not dpath.endswith('/'):
+                    dpath += '/'
+                if target_path.startswith(dpath):
+                    if len(dpath) > len(best_dir_path):
+                        best_dir_path = dpath
+                        best_dir_idx = i
 
-            print mod_lines[next_idx] "|" mod_paths[next_idx]
-        }')
+        if best_dir_idx is None:
+            return None
 
-        target_line="${res%%|*}"
-        target_path="${res#*|}"
+        l = lines_arr[best_dir_idx]
+        if l.lstrip().startswith('+ '):
+            expand_directory_node(lines_arr, best_dir_idx)
+        else:
+            return None
+
+def get_visible_line_for_path(lines_arr, target_path):
+    target_path = expand_path(target_path)
+    # 1. Exact file match
+    for i, l in enumerate(lines_arr):
+        if l.strip() and not l.lstrip().startswith('#') and not l.strip().endswith('/'):
+            if resolve_full_path(lines_arr, i) == target_path:
+                return i + 1, False
+    # 2. Collapsed ancestor match
+    best_idx = None
+    best_path = ''
+    for i, l in enumerate(lines_arr):
+        if l.strip() and not l.lstrip().startswith('#') and (l.strip().endswith('/') or get_indent(l) == 0):
+            dpath = resolve_full_path(lines_arr, i)
+            if not dpath.endswith('/'):
+                dpath += '/'
+            if target_path.startswith(dpath):
+                if len(dpath) > len(best_path):
+                    best_path = dpath
+                    best_idx = i
+    if best_idx is not None:
+        return best_idx + 1, True
+    return 0, False
+
+# Normalize status files list
+norm_status = []
+for p in status_lines:
+    ep = expand_path(p)
+    if ep not in norm_status:
+        norm_status.append(ep)
+
+# Build sorted modified entries
+mod_entries = []
+for p in norm_status:
+    ln, is_collapsed = get_visible_line_for_path(lines, p)
+    if ln > 0:
+        mod_entries.append((ln, p, is_collapsed))
+
+if not mod_entries:
+    clean_exit('0||')
+
+mod_entries.sort(key=lambda x: (x[0], x[1]))
+
+cur_idx = None
+for idx, (ln, p, _) in enumerate(mod_entries):
+    if ln == cur:
+        cur_idx = idx
+        break
+
+if direction > 0:
+    if cur_idx is not None:
+        next_idx = (cur_idx + 1) % len(mod_entries)
+    else:
+        next_idx = 0
+        for idx, (ln, p, _) in enumerate(mod_entries):
+            if ln > cur:
+                next_idx = idx
+                break
+else:
+    if cur_idx is not None:
+        next_idx = (cur_idx - 1) % len(mod_entries)
+    else:
+        next_idx = len(mod_entries) - 1
+        for idx in range(len(mod_entries) - 1, -1, -1):
+            if mod_entries[idx][0] < cur:
+                next_idx = idx
+                break
+
+chosen_target = mod_entries[next_idx][1]
+orig_len = len(lines)
+final_idx = reveal_target_path(lines, chosen_target)
+
+if final_idx is None:
+    clean_exit('0||')
+
+tree_updated_file = ''
+if len(lines) != orig_len:
+    try:
+        with open(out_tree, 'w', encoding='utf-8') as f:
+            for line in lines:
+                f.write(line + '\n')
+        tree_updated_file = out_tree
+    except Exception:
+        tree_updated_file = ''
+
+target_line = final_idx + 1
+clean_exit(f"{target_line}|{chosen_target}|{tree_updated_file}")
+EOF
+)
+
+        target_line=$(printf '%s\n' "$res" | cut -d'|' -f1)
+        target_path=$(printf '%s\n' "$res" | cut -d'|' -f2)
+        out_updated=$(printf '%s\n' "$res" | cut -d'|' -f3)
 
         if [ "$target_line" -gt 0 ] 2>/dev/null && [ -n "$target_path" ]; then
-            printf '%s %%{ select %s.1,%s.1; kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$target_line" "$target_line" "$target_path"
+            if [ -n "$out_updated" ] && [ -f "$out_updated" ]; then
+                printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select %s.1,%s.1; kiki-tree-git-action %%{%s}; nop %%sh{ rm -f "%s" } }\n' "$eval_cmd" "$out_updated" "$target_line" "$target_line" "$target_path" "$out_updated"
+            else
+                [ -f "$out_tree" ] && rm -f "$out_tree"
+                printf '%s %%{ select %s.1,%s.1; kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$target_line" "$target_line" "$target_path"
+            fi
         else
+            [ -f "$out_tree" ] && rm -f "$out_tree"
             printf '%s %%{ echo -markup "{yellow}[kiki-tree]{default} No modified files in file tree" }\n' "$eval_cmd"
         fi
     }}

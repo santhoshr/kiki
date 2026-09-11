@@ -16,13 +16,15 @@ declare-option -hidden str kiki_tree_git_repo ""
 declare-option -hidden str kiki_git_popup_title ""
 
 # Pre-formatted popup menus for git modes
-declare-option -hidden str kiki_git_popup_menu_tree_git %{s: Status
+declare-option -hidden str kiki_git_popup_menu_tree_git %{<tab>/<s-tab>: Next/Prev file
+g/s: Status
 c: Commit...
 l: Log
 d: Diff
 q: Quit popup}
 
 declare-option -hidden str kiki_git_popup_menu_modified %{<tab>/<s-tab>: Next/Prev file
+g: Status
 s/a: Stage
 X: Restore (prompt)
 S: Stage all
@@ -36,6 +38,7 @@ e: Edit
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_staged %{<tab>/<s-tab>: Next/Prev file
+g: Status
 u: Unstage
 X: Restore staged (prompt)
 U: Unstage all
@@ -49,6 +52,7 @@ e: Edit
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_staged_modified %{<tab>/<s-tab>: Next/Prev file
+g: Status
 s: Stage
 u: Unstage
 X: Restore staged (prompt)
@@ -63,6 +67,7 @@ e: Edit
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_untracked %{<tab>/<s-tab>: Next/Prev file
+g: Status
 a/s: Add/Stage
 X: Clean (prompt)
 S: Stage all
@@ -76,7 +81,7 @@ e: Edit
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_git %{<tab>/<s-tab>: Next/Prev file
-s: Status
+g/s: Status
 c: Commit...
 l: Log
 d: Diff
@@ -85,7 +90,9 @@ p: Preview
 e: Edit
 q: Quit buffer}
 
-declare-option -hidden str kiki_git_popup_menu_commit %{c: Commit
+declare-option -hidden str kiki_git_popup_menu_commit %{<tab>/<s-tab>: Next/Prev file
+g: Status
+c: Commit
 a: Commit all (-a)
 A: Amend
 N: Amend no-edit
@@ -216,14 +223,24 @@ define-command -override -hidden -params 1 \
         target=$(printf '%s\n' "$target" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^[\\\"'\''\`]*//' -e 's/[\\\"'\''\`]*$//')
 
         # If repo is not set or target is relative and not found, try to discover repo from buffer context
+        # In kiki-buffer prioritize $PWD, in non-kiki prioritize buffer directory
         discovered_repo="$kak_opt_kiki_tree_git_repo"
         if [ -z "$discovered_repo" ] || [ ! -d "$discovered_repo" ]; then
-            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-                discovered_repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                discovered_repo=$(git rev-parse --show-toplevel 2>/dev/null)
+                if [ -z "$discovered_repo" ] || [ ! -d "$discovered_repo" ]; then
+                    if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                        discovered_repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                    fi
+                fi
+            else
+                if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    discovered_repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                fi
+                if [ -z "$discovered_repo" ] || [ ! -d "$discovered_repo" ]; then
+                    discovered_repo=$(git rev-parse --show-toplevel 2>/dev/null)
+                fi
             fi
-        fi
-        if [ -z "$discovered_repo" ] || [ ! -d "$discovered_repo" ]; then
-            discovered_repo=$(git rev-parse --show-toplevel 2>/dev/null)
         fi
 
         # If still not found or target doesn't exist relative to discovered_repo, scan buffer for tree root or cd/pwd
@@ -340,11 +357,18 @@ define-command -override -hidden -params 1 \
             fi
         else
             top=""
-            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-                top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
-            fi
-            if [ -z "$top" ]; then
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
                 top=$(git rev-parse --show-toplevel 2>/dev/null)
+                if [ -z "$top" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                fi
+            else
+                if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                fi
+                if [ -z "$top" ]; then
+                    top=$(git rev-parse --show-toplevel 2>/dev/null)
+                fi
             fi
             if [ -n "$top" ]; then
                 printf "set-option buffer kiki_tree_git_repo %%{%s}\n" "$top"
@@ -509,11 +533,17 @@ define-command -override -docstring "kiki-git-stage-all: stage all changes (git 
         repo=""
         target="$kak_opt_kiki_git_target"
         [ -n "$target" ] && repo=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
-        if [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-            repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+        if [ -z "$repo" ]; then
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                repo=$(git rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            else
+                [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && repo=$(git rev-parse --show-toplevel 2>/dev/null)
+            fi
         fi
-        [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
-        [ -z "$repo" ] && repo=$(git rev-parse --show-toplevel 2>/dev/null)
 
         if [ -n "$repo" ]; then
             if out=$(cd "$repo" && git add -A 2>&1); then
@@ -533,11 +563,17 @@ define-command -override -docstring "kiki-git-add-all: add changes in current di
         repo=""
         target="$kak_opt_kiki_git_target"
         [ -n "$target" ] && repo=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
-        if [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-            repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+        if [ -z "$repo" ]; then
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                repo=$(git rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            else
+                [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && repo=$(git rev-parse --show-toplevel 2>/dev/null)
+            fi
         fi
-        [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
-        [ -z "$repo" ] && repo=$(git rev-parse --show-toplevel 2>/dev/null)
 
         if [ -n "$repo" ]; then
             if out=$(cd "$repo" && git add . 2>&1); then
@@ -557,11 +593,17 @@ define-command -override -docstring "kiki-git-unstage-all: unstage all changes (
         repo=""
         target="$kak_opt_kiki_git_target"
         [ -n "$target" ] && repo=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
-        if [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-            repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+        if [ -z "$repo" ]; then
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                repo=$(git rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            else
+                [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && repo=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
+                [ -z "$repo" ] && repo=$(git rev-parse --show-toplevel 2>/dev/null)
+            fi
         fi
-        [ -z "$repo" ] && [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ] && repo=$(git -C "$kak_opt_kiki_tree_git_repo" rev-parse --show-toplevel 2>/dev/null)
-        [ -z "$repo" ] && repo=$(git rev-parse --show-toplevel 2>/dev/null)
 
         if [ -n "$repo" ]; then
             if (cd "$repo" && git restore --staged . >/dev/null 2>&1) ||
@@ -806,11 +848,30 @@ define-command -override -docstring "kiki-git-status: show git status in streami
         pfx="${kak_opt_kiki_prefix:-\$ }"
         repo="$kak_opt_kiki_tree_git_repo"
         if [ -z "$repo" ] || [ ! -d "$repo" ]; then
-            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-                buf_dir=$(dirname "$kak_buffile")
-                top=$(git -C "$buf_dir" rev-parse --show-toplevel 2>/dev/null)
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                top=$(git rev-parse --show-toplevel 2>/dev/null)
                 if [ -n "$top" ]; then
                     repo="$top"
+                elif [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    buf_dir=$(dirname "$kak_buffile")
+                    top=$(git -C "$buf_dir" rev-parse --show-toplevel 2>/dev/null)
+                    if [ -n "$top" ]; then
+                        repo="$top"
+                    fi
+                fi
+            else
+                if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    buf_dir=$(dirname "$kak_buffile")
+                    top=$(git -C "$buf_dir" rev-parse --show-toplevel 2>/dev/null)
+                    if [ -n "$top" ]; then
+                        repo="$top"
+                    fi
+                fi
+                if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+                    top=$(git rev-parse --show-toplevel 2>/dev/null)
+                    if [ -n "$top" ]; then
+                        repo="$top"
+                    fi
                 fi
             fi
         fi
@@ -1441,6 +1502,7 @@ define-command -override -docstring "kiki-git-edit: edit target file in Kakoune"
 # Mappings for user mode untracked (Untracked / New File Popup)
 map global untracked <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global untracked <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global untracked g ':kiki-git-status<ret>' -docstring 'Status'
 map global untracked a ':kiki-git-add<ret>' -docstring 'Add'
 map global untracked s ':kiki-git-stage<ret>' -docstring 'Stage'
 map global untracked X ':kiki-git-clean<ret>' -docstring 'Clean (prompt)'
@@ -1458,6 +1520,7 @@ map global untracked q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 # Mappings for user mode modified (Modified / Conflict File Popup)
 map global modified <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global modified <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global modified g ':kiki-git-status<ret>' -docstring 'Status'
 map global modified s ':kiki-git-stage<ret>' -docstring 'Stage'
 map global modified a ':kiki-git-stage<ret>' -docstring 'Stage'
 map global modified X ':kiki-git-restore<ret>' -docstring 'Restore (prompt)'
@@ -1475,6 +1538,7 @@ map global modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 # Mappings for user mode staged (Staged File Popup)
 map global staged <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global staged <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global staged g ':kiki-git-status<ret>' -docstring 'Status'
 map global staged u ':kiki-git-unstage<ret>' -docstring 'Unstage'
 map global staged X ':kiki-git-restore-staged<ret>' -docstring 'Restore (prompt)'
 map global staged U ':kiki-git-unstage-all<ret>' -docstring 'Unstage all'
@@ -1491,6 +1555,7 @@ map global staged q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 # Mappings for user mode staged-modified (Staged + Modified File Popup)
 map global staged-modified <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global staged-modified <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global staged-modified g ':kiki-git-status<ret>' -docstring 'Status'
 map global staged-modified s ':kiki-git-stage<ret>' -docstring 'Stage'
 map global staged-modified u ':kiki-git-unstage<ret>' -docstring 'Unstage'
 map global staged-modified X ':kiki-git-restore-staged<ret>' -docstring 'Restore (prompt)'
@@ -1509,6 +1574,7 @@ map global staged-modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 # Mappings for user mode git (Compact Common Git Actions Popup / Clean tree)
 map global git <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global git <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global git g ':kiki-git-status<ret>' -docstring 'Status'
 map global git s ':kiki-git-status<ret>' -docstring 'Status'
 map global git c ':kiki-show-git-commit-popup<ret>' -docstring 'Commit...'
 map global git l ':kiki-git-log<ret>' -docstring 'Log'
@@ -1519,6 +1585,9 @@ map global git e ':kiki-git-edit<ret>' -docstring 'Edit'
 map global git q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode tree-git (File tree git common popup)
+map global tree-git <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
+map global tree-git <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global tree-git g ':kiki-git-status<ret>' -docstring 'Status'
 map global tree-git s ':kiki-git-status<ret>' -docstring 'Status'
 map global tree-git c ':kiki-show-git-commit-popup<ret>' -docstring 'Commit...'
 map global tree-git l ':kiki-git-log<ret>' -docstring 'Log'
@@ -1526,6 +1595,9 @@ map global tree-git d ':kiki-git-diff-all<ret>' -docstring 'Diff'
 map global tree-git q ':nop<ret>' -docstring 'Quit popup'
 
 # Mappings for user mode commit (Commit actions popup)
+map global commit <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
+map global commit <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
+map global commit g ':kiki-git-status<ret>' -docstring 'Status'
 map global commit c ':kiki-git-commit<ret>' -docstring 'Commit'
 map global commit a ':kiki-git-commit-all<ret>' -docstring 'Commit all (-a)'
 map global commit A ':kiki-git-commit-amend<ret>' -docstring 'Amend'

@@ -1112,16 +1112,36 @@ define-command -override -hidden \
                 exit 0
             fi
 
-            # 6. Check if current buffer is a real file
-            if [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
-                printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$kak_buffile"
-                exit 0
+            # 6. Check buffer context: PWD for kiki-buffer, buffer file for non-kiki
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                pwd_top=$(git rev-parse --show-toplevel 2>/dev/null)
+                if [ -n "$pwd_top" ]; then
+                    printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$pwd_top"
+                    exit 0
+                fi
+            else
+                if [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+                    printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$kak_buffile"
+                    exit 0
+                fi
             fi
 
-            # 7. Default fallback: open git popup for buffer's directory or current PWD
+            # 7. Default fallback: PWD priority in kiki-buffer, buffer dir priority in non-kiki
             buf_top=""
-            if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
-                buf_top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+            pwd_top=$(git rev-parse --show-toplevel 2>/dev/null)
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                if [ -n "$pwd_top" ]; then
+                    buf_top="$pwd_top"
+                elif [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    buf_top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                fi
+            else
+                if [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+                    buf_top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null)
+                fi
+                if [ -z "$buf_top" ] && [ -n "$pwd_top" ]; then
+                    buf_top="$pwd_top"
+                fi
             fi
             if [ -n "$buf_top" ]; then
                 printf '%s %%{ kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$buf_top"

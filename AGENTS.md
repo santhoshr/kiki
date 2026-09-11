@@ -78,7 +78,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 ### E. Interactive Multi-Root File Tree (`rc/tree.kak`)
 - **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
 - **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` (or `<c-o>`).
-- **Git Action Popup in Tree:** Pressing `<a-g>` on any file or directory in the file tree opens the Git action popup (`tree-git` on directories, or file status popup on files).
+- **Git Action Popup in Tree:** Pressing `,g` (aliases: `` ` ``, `<a-g>`) on any file or directory in the file tree opens the Git action popup (`tree-git` on directories, or file status popup on files).
 - **Directory Trap:** A `RuntimeError` hook intercepts Kakoune's native `:edit <dir>` (*"is a directory"*) error and immediately launches `kiki-file-tree` on that directory.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Keybindings in Kiki Buffers:**
@@ -96,13 +96,15 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `.`: Toggle hidden dotfiles.
   - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
   - `<a-C>`: Insert `kiki_prefix` into current line (if empty) or previous available empty line above, and enter insert mode.
-  - `<a-g>`: Open Git action popup for any file or directory under cursor.
+  - `,g` / `` ` `` / `<a-g>`: Open Git action popup for any file or directory under cursor.
   - `D`: Execute command in terminal shell, or drop to shell in directory/path under cursor.
   - `q`: Close/delete Kiki buffer.
 
 ### F. Git Status Recognition & Action Menu (`rc/git.kak`)
 - **Status Highlighting:** Highlights git status lines automatically (staged: green, modified: yellow, untracked: magenta, deleted: red).
 - **Interactive Action Menu (`kiki-git`):** Pressing `<ret>` on any git status entry opens an action popup without editing the file directly.
+- **Repo Detection Priority:** In `kiki-buffer` (`*.kiki`, `*kiki-*`) git repo is resolved from `$PWD` first (falls back to `dirname "$kak_buffile"`); in non-kiki buffers `dirname "$kak_buffile"` is tried first (falls back to `$PWD`).
+- **Popup Consistency:** `g` shows `kiki-git-status` in every git popup; `<tab>`/`<s-tab>` rotates next/prev file in every popup including `git`/`tree-git`/`commit`.
 
 ---
 
@@ -122,7 +124,8 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `f` | `kiki-fifo` | Asynchronously stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell in `$PWD` |
-| `g` | `kiki-git-status` | Stream git status into dedicated FIFO buffer |
+| `g` | `kiki-smart-git-popup` | Open git action popup on file/directory (aliases: `` ` ``, `<a-g>`) |
+| `` ` `` | `kiki-smart-git-popup` | Open git action popup on file/directory (alias for `g`) |
 | `u` | `kiki-open-url` | Open URL from line or buffer in web browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor/selection |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topic files) |
@@ -142,6 +145,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | :--- | :--- | :--- |
 | `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
 | `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `g` | `kiki-git-status` | Show git status in streaming FIFO buffer |
 | `s` | `kiki-git-stage` | Stage file (`git add`) |
 | `a` | `kiki-git-stage` | Stage file (`git add`) |
 | `X` | `kiki-git-restore` | Restore file changes with confirmation (`git restore`) |
@@ -162,6 +166,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | :--- | :--- | :--- |
 | `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
 | `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `g` | `kiki-git-status` | Show git status in streaming FIFO buffer |
 | `u` | `kiki-git-unstage` | Unstage file (`git restore --staged`) |
 | `X` | `kiki-git-restore-staged` | Restore & unstage file with confirmation |
 | `U` | `kiki-git-unstage-all` | Unstage all changes (`git restore --staged .`) |
@@ -181,6 +186,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | :--- | :--- | :--- |
 | `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
 | `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `g` | `kiki-git-status` | Show git status in streaming FIFO buffer |
 | `a` | `kiki-git-add` | Add file (`git add`) |
 | `s` | `kiki-git-stage` | Stage file (`git add`) |
 | `X` | `kiki-git-clean` | Clean/remove untracked file with confirmation (`git clean`) |
@@ -199,7 +205,10 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 
 | Key | Command | Description |
 | :--- | :--- | :--- |
-| `s` | `kiki-git-status` | Show git status in streaming FIFO buffer |
+| `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
+| `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `g` | `kiki-git-status` | Show git status in streaming FIFO buffer |
+| `s` | `kiki-git-status` | Show git status in streaming FIFO buffer (alias) |
 | `c` | — | Enter `commit` commit popup menu |
 | `l` | `kiki-git-log` | View git log in interactive terminal shell |
 | `d` | `kiki-git-diff-all` | View unstaged diff in interactive terminal shell |
@@ -209,6 +218,10 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 
 | Key | Command | Description |
 | :--- | :--- | :--- |
+| `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
+| `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `g` | `kiki-git-status` | Show git status in streaming FIFO buffer |
+| `s` | `kiki-git-status` | Show git status in streaming FIFO buffer (alias) |
 | `c` | — | Enter `commit` commit popup menu |
 | `l` | `kiki-git-log` | View git log in interactive terminal shell |
 | `d` | `kiki-git-diff-all` | View diff in interactive terminal shell |
@@ -219,6 +232,9 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 
 | Key | Command | Description |
 | :--- | :--- | :--- |
+| `<tab>` | `kiki-git-rotate-file 1` | Rotate to next file (popup stays open) |
+| `<s-tab>` | `kiki-git-rotate-file -1` | Rotate to previous file (popup stays open) |
+| `g` | `kiki-git-status` | Show git status in streaming FIFO buffer |
 | `c` | `kiki-git-commit` | Commit staged changes (`git commit`) |
 | `a` | `kiki-git-commit-all` | Commit all tracked changes (`git commit -a`) |
 | `A` | `kiki-git-commit-amend` | Amend commit (`git commit --amend`) |

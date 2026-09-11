@@ -195,7 +195,7 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 
 ### File Tree Keybindings:
 - `<ret>` / `<c-o>`: Toggle folder expand (`+ `) / collapse (`- `), or open file directly into an editor buffer.
-- `<a-g>`: Open **Git Action Popup** for any file or directory under cursor in the file tree (or in any Kiki buffer).
+- `,g` / `` ` `` / `<a-g>`: Open **Git Action Popup** for any file or directory under cursor in the file tree (or in any Kiki buffer).
 - `<tab>`: **Step Into** — promotes the selected subfolder to become the root directory of the tree view.
 - `<c-l>`: **Move to Parent** — moves the tree view up to the parent directory.
 - `*`: **Recursive Expand** — recursively unfolds all subdirectories under cursor.
@@ -207,15 +207,16 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 - `D`: Drop into an interactive shell in the selected folder.
 - `q`: Close the file tree buffer.
 
-#### Git Repository Action Popup in File Tree (`<a-g>`):
-Pressing `<a-g>` on any directory in `*kiki-file-tree*` opens the `tree-git` popup:
-- `s`: **Status** — opens `git status` in a FIFO buffer for that repository.
+#### Git Repository Action Popup in File Tree (`,g` / `` ` `` / `<a-g>`):
+Pressing `,g` (aliases `` ` ``, `<a-g>`) on any directory in `*kiki-file-tree*` opens the `tree-git` popup:
+- `<tab>`/`<s-tab>`: **Next/Prev file** — rotate to next/prev changed file
+- `g`/`s`: **Status** — opens `git status` in a FIFO buffer for that repository.
 - `c`: **Commit...** — opens the Git commit menu (`commit`).
 - `l`: **Log** — runs `git log` in an interactive shell terminal for that repo.
 - `d`: **Diff** — runs `git diff` in an interactive shell terminal for that repo.
 - `q`: **Quit popup** — closes the popup without changes.
 
-Pressing `<a-g>` on any file (in the file tree or inside normal editor buffers) opens the contextual Git action popup (`untracked`, `modified`, `staged`, or `git`) scoped to that file.
+Pressing `,g` (aliases `` ` ``, `<a-g>`) on any file (in the file tree or inside normal editor buffers) opens the contextual Git action popup (`untracked`, `modified`, `staged`, or `git`) scoped to that file.
 
 > **Tip:** You can also run `:edit /path/to/dir/` (or `:e .`) as usual. Kiki automatically catches Kakoune's directory error and opens the file tree for that folder.
 
@@ -277,15 +278,16 @@ When you run `$ git status` or `$ git status -s` inside Kiki buffers, Kiki autom
 - **Magenta**: Untracked files (`Untracked files:`, `??`)
 - **Red**: Deleted files (`deleted:`, ` D`) or merge conflicts
 
-Pressing `<ret>` or rotating with `<tab>` / `<s-tab>` opens the **Smart Git Action Popup** tailored to the file's current status:
+Pressing `<ret>` or rotating with `<tab>` / `<s-tab>` opens the **Smart Git Action Popup** (via `,g` / `` ` ``) tailored to the file's current status:
 - **Modified files:** `<s>` Stage, `<X>` Restore (prompt confirmation), `<S>` Stage All, `<v>` Diff, `<e>` Edit, `<p>` Preview
 - **Staged files:** `<u>` Unstage, `<X>` Restore & Discard Staged (prompt confirmation), `<U>` Unstage All, `<v>` Diff (cached), `<e>` Edit, `<p>` Preview
 - **Untracked files:** `<a>` Add, `<s>` Stage, `<X>` Clean untracked file (prompt confirmation), `<S>` Stage All, `<v>` Diff, `<e>` Edit, `<p>` Preview
 
 | Key | Action | Contextual Description |
 | :--- | :--- | :--- |
-| `<tab>` | **Next File** | Rotates to next changed file with action popup open |
-| `<s-tab>` | **Prev File** | Rotates to previous changed file with action popup open |
+| `<tab>` | **Next File** | Rotates to next changed file with action popup open (in every popup including `git`/`tree-git`/`commit`) |
+| `<s-tab>` | **Prev File** | Rotates to previous changed file with action popup open (in every popup including `git`/`tree-git`/`commit`) |
+| `g` | **Status** | Shows `git status` in streaming FIFO buffer (available in every git popup) |
 | `s` | **Stage** | Stages modified or untracked file (`git add`) |
 | `a` | **Add** | Adds/stages untracked or modified file (`git add`) |
 | `u` | **Unstage** | Unstages staged file (`git restore --staged`) |
@@ -305,6 +307,8 @@ Pressing `<ret>` or rotating with `<tab>` / `<s-tab>` opens the **Smart Git Acti
 
 ### Git Commit Popup (`commit`):
 Press `c` inside the Git action popup to enter the commit menu:
+- `<tab>`/`<s-tab>`: Rotate to next/prev changed file
+- `g`: Status (`git status` in FIFO buffer)
 - `c`: Run `git commit` in interactive terminal shell
 - `a`: Run `git commit -a` (commit all tracked changes) in terminal shell
 - `A`: Run `git commit --amend` in interactive terminal shell
@@ -334,7 +338,7 @@ Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tr
 | `-` | Narrows/hides sibling folders in tree |
 | `r` | Refreshes directory node or Git status block in-place |
 | `.` | Toggles hidden dotfiles in tree |
-| `<a-g>` | Opens Git action popup for any file or directory (in file tree or buffers) |
+| `,g` / `` ` `` / `<a-g>` | Opens Git action popup for any file or directory (in file tree or buffers) |
 | `q` | Closes buffer |
 
 ---
@@ -412,7 +416,8 @@ set-option global kiki_tree_show_hidden false
 | `f` | `kiki-fifo` | Stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell |
-| `g` | `kiki-git-status` | Stream git status into dedicated FIFO buffer |
+| `g` | `kiki-smart-git-popup` | Open git action popup on file/directory (aliases `` ` ``, `<a-g>`) |
+| `` ` `` | `kiki-smart-git-popup` | Open git action popup on file/directory (alias for `g`) |
 | `u` | `kiki-open-url` | Open URL from line or buffer in browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topics) |

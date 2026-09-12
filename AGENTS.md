@@ -92,6 +92,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `<c-l>`: Move up to parent folder.
   - `*`: Recursively expand directory tree.
   - `-`: Narrow unselected subtrees/siblings.
+  - `=`: Toggle git status overlay (1: line highlight `yellow`/`green`/`magenta`/`cyan` + 3: flag on `+/-` marker) anywhere in tree.
   - `r`: Refresh directory node or Git status block in-place.
   - `.`: Toggle hidden dotfiles.
   - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
@@ -105,6 +106,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 - **Interactive Action Menu (`kiki-git`):** Pressing `<ret>` on any git status entry opens an action popup without editing the file directly.
 - **Repo Detection Priority:** In `kiki-buffer` (`*.kiki`, `*kiki-*`) git repo is resolved from `$PWD` first (falls back to `dirname "$kak_buffile"`); in non-kiki buffers `dirname "$kak_buffile"` is tried first (falls back to `$PWD`).
 - **Popup Consistency:** `g` shows `kiki-git-status` in every git popup; `<tab>`/`<s-tab>` rotates next/prev file in every popup including `git`/`tree-git`/`commit`.
+- **Tree Git Overlay:** `=` anywhere in `*kiki-file-tree*` toggles git overlay (highlight + flag) without changing buffer text, preserving markdown tree.
 
 ---
 

@@ -459,7 +459,7 @@ define-command -override -docstring "kiki-list-topics: list all available topic 
             printf 'kiki-set-modeline kiki-buffer\n'
             printf 'execute-keys %%{<percent>|cat "%s"<ret>}\n' "$tmp_file"
             printf 'select 1.1,1.1\n'
-            printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_file"
+            printf 'nop %%sh{ rm -f -- "%s" 2>/dev/null }\n' "$tmp_file"
         else
             printf 'echo -markup "{Error}Topics directory does not exist: %s"\n' "$topics_dir"
         fi

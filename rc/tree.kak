@@ -8,8 +8,9 @@ declare-option -hidden line-specs kiki_tree_git_flags
 hook -group kiki global BufCreate \*kiki-file-tree\* %{
     set-option buffer kiki_buffer_type kiki-buffer
     set-option buffer filetype kiki
-    map buffer normal = ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
-    map buffer normal + ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
+    map buffer normal v ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
+    map buffer normal f ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
+    map buffer normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
 }
 
 hook -group kiki global BufOpenFile .*\.kikitree$ %{
@@ -24,16 +25,18 @@ hook -group kiki global BufSetOption filetype=kiki-tree %{
 
 hook -group kiki global WinSetOption filetype=kiki-tree %{
     kiki-set-modeline kiki-buffer
-    map window normal = ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
-    map window normal + ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
+    map window normal v ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
+    map window normal f ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
+    map window normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
 }
 
 hook -group kiki-tree-overlay global WinSetOption filetype=kiki %{
     evaluate-commands %sh{
         case "$kak_bufname" in
             \*kiki-file-tree\*)
-                printf 'map window normal = :kiki-tree-git-overlay<ret> -docstring "Toggle git status overlay (highlight + flag)"\n'
-                printf 'map window normal + :kiki-tree-filter-git<ret> -docstring "Filter to git-related files (expand subfolders)"\n'
+                printf 'map window normal v :kiki-tree-git-overlay<ret> -docstring "Toggle git status overlay (highlight + flag)"\n'
+                printf 'map window normal f :kiki-tree-filter-git<ret> -docstring "Filter to git-related files (expand subfolders)"\n'
+                printf 'map window normal g :kiki-smart-git-popup<ret> -docstring "Open git action popup on file or directory"\n'
                 ;;
         esac
     }
@@ -131,7 +134,7 @@ define-command -override -hidden -params 1 \
 
         printf 'execute-keys %%{<percent>|cat "%s"<ret>}\n' "$tmp_content"
         printf 'select 1.1,1.1\n'
-        printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_content"
+        printf 'nop %%sh{ rm -f -- "%s" 2>/dev/null }\n' "$tmp_content"
     }}
 
 # Open/toggle tree item at cursor (supports root nodes, subdirectories, files, and arbitrary new paths)
@@ -343,7 +346,7 @@ define-command -override -hidden -params 1..2 \
 
                 printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
                 printf "select %s.1,%s.1\n", cur, cur
-                printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+                printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
             } else {
                 # Expand in-place
                 for (i = 1; i < cur; i++) print lines[i] > out_tmp
@@ -393,7 +396,7 @@ define-command -override -hidden -params 1..2 \
 
                 printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
                 printf "select %s.1,%s.1\n", cur, cur
-                printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+                printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
             }
         }'
         if [ -f "${tmp_file}.out" ] && [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
@@ -552,7 +555,7 @@ PYEOF
             printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files to filter" }\n' "$eval_cmd"
             exit 0
         fi
-        printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f "%s" "%s" "%s" } }\n' "$eval_cmd" "$filtered_file" "$tmp_file" "$status_dump" "$out_filtered"
+        printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" "%s" "%s" 2>/dev/null } }\n' "$eval_cmd" "$filtered_file" "$tmp_file" "$status_dump" "$out_filtered"
         # refresh gutter if overlay is on (new buffer content)
         if [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
             printf '%s %%{ kiki-tree-git-overlay-refresh }\n' "$eval_cmd"
@@ -760,7 +763,7 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", root_idx, root_idx
-            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+            printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}
 
@@ -970,7 +973,7 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", cur, cur
-            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+            printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}
 
@@ -1205,7 +1208,7 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", target_idx, target_idx
-            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+            printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}
 
@@ -1379,7 +1382,7 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", root_idx, root_idx
-            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+            printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}
 
@@ -1665,7 +1668,7 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s\n", new_sel_desc
-            printf "nop %%sh{ rm -f \"%s\" \"%s\" }\n", tmp_file, out_tmp
+            printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}
 
@@ -2323,7 +2326,7 @@ EOF
 
         if [ "$target_line" -gt 0 ] 2>/dev/null && [ -n "$target_path" ]; then
             if [ -n "$out_updated" ] && [ -f "$out_updated" ]; then
-                printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select %s.1,%s.1; kiki-tree-git-action %%{%s}; nop %%sh{ rm -f "%s" } }\n' "$eval_cmd" "$out_updated" "$target_line" "$target_line" "$target_path" "$out_updated"
+                printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select %s.1,%s.1; kiki-tree-git-action %%{%s}; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$out_updated" "$target_line" "$target_line" "$target_path" "$out_updated"
             else
                 [ -f "$out_tree" ] && rm -f "$out_tree"
                 printf '%s %%{ select %s.1,%s.1; kiki-tree-git-action %%{%s} }\n' "$eval_cmd" "$target_line" "$target_line" "$target_path"
@@ -2466,27 +2469,6 @@ def get_clean_name(s):
         t = t.split("/")[-1]
     return t
 
-groups = {"modified":[], "staged":[], "untracked":[], "renamed":[]}
-for entry in status_raw:
-    if "|" not in entry: continue
-    code, path = entry.split("|",1)
-    base = os.path.basename(path.rstrip("/"))
-    if not base: continue
-    # escape for regex (Kak PCRE: don't escape -)
-    esc = re.escape(base).replace(r'\-', '-')
-    g = classify(code)
-    if g == "staged_modified":
-        groups["modified"].append(esc)
-        groups["staged"].append(esc)
-    elif g in groups:
-        groups[g].append(esc)
-    else:
-        groups["modified"].append(esc)
-
-# deduplicate
-for k in groups:
-    groups[k] = sorted(set(groups[k]))
-
 def join_esc(lst):
     return "|".join(lst) if lst else ""
 
@@ -2506,12 +2488,10 @@ def git_face_sym(code):
         return ("cyan", "R")
     if "C" in code or "U" in code:
         return ("red", "C")
-    # fallback based on group
     return None
+
 face_map = {"modified": "yellow", "staged": "green", "untracked": "magenta", "renamed": "cyan"}
 symbol_map = {"modified": "M", "staged": "S", "untracked": "N", "renamed": "R"}
-flag_entries = []
-seen_lines = set()
 
 def get_indent_py(s):
     s_exp = s.replace("\t", "    ")
@@ -2522,11 +2502,9 @@ def get_indent_py(s):
         else:
             break
     rest = s_exp.lstrip()
-    # account for marker "+ "/"- " as part of indent
     while rest.startswith("+ ") or rest.startswith("- "):
         indent += 2
         rest = rest[2:].lstrip()
-        # count extra spaces after marker already in loop? keep simple
         extra = 0
         for ch in rest:
             if ch == " ":
@@ -2552,7 +2530,6 @@ def expand_path_py(p, home, pwd):
     return pwd + "/" + p
 
 def resolve_full_path_py(all_lines, idx, home, pwd):
-    # idx 1-indexed
     try:
         t_line = all_lines[idx-1]
     except:
@@ -2568,7 +2545,6 @@ def resolve_full_path_py(all_lines, idx, home, pwd):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         ind = get_indent_py(line)
-        # only consider dir lines (end with /) as parents, or root
         if ind < cur_indent and line.rstrip().endswith("/"):
             parts.append(get_clean_name(line))
             cur_indent = ind
@@ -2582,77 +2558,66 @@ def resolve_full_path_py(all_lines, idx, home, pwd):
             full = full + "/" + p
     return full
 
-# first pass: visible files
+status_map = {}
 for entry in status_raw:
     if "|" not in entry: continue
-    code, path = entry.split("|",1)
-    base = os.path.basename(path.rstrip("/"))
-    if not base: continue
+    code, path = entry.split("|", 1)
+    norm_path = os.path.realpath(path.rstrip("/")) if os.path.exists(path.rstrip("/")) else os.path.normpath(path.rstrip("/"))
     bs = git_face_sym(code)
-    if bs is not None:
-        face, sym = bs
-    else:
+    if bs is None:
         g = classify(code)
-        gutter_group = "modified" if g == "staged_modified" else g
-        if gutter_group not in face_map:
-            continue
-        face = face_map[gutter_group]
-        sym = symbol_map[gutter_group]
-    target_line = 0
-    for idx, line in enumerate(lines, start=1):
-        if get_clean_name(line) == base:
-            target_line = idx
-            break
-    if target_line == 0 or target_line in seen_lines:
-        continue
-    seen_lines.add(target_line)
-    flag_entries.append(f"'{target_line}|{{{face}}}{sym}'")
+        gg = "modified" if g == "staged_modified" else g
+        if gg in face_map:
+            bs = (face_map[gg], symbol_map[gg])
+    if bs is not None:
+        status_map[norm_path] = bs
 
-# second pass: collapsed folders - gutter on collapsed dir if descendant file is git-modified
-# severity order for aggregated dir status: C > N/?? > M > A/S > R
 severity = {"C": 5, "N": 4, "M": 3, "S": 3, "A": 3, "R": 2, "?": 4, "●": 3}
-# collect collapsed dir lines
-collapsed = []
+face_to_group = {"yellow": "modified", "green": "staged", "magenta": "untracked", "cyan": "renamed", "red": "modified"}
+groups = {"modified":[], "staged":[], "untracked":[], "renamed":[]}
+flag_entries = []
+seen_lines = set()
+
+# Process each tree line directly by resolving its exact full path
 for idx, line in enumerate(lines, start=1):
-    if line.lstrip().startswith("+ ") and line.rstrip().endswith("/"):
-        full = resolve_full_path_py(lines, idx, home, pwd)
-        if full:
-            collapsed.append((idx, full.rstrip("/")))
-for idx, full in collapsed:
-    # find descendant status entries
-    best = None
-    best_sev = -1
-    best_face = None
-    best_sym = None
-    for entry in status_raw:
-        if "|" not in entry: continue
-        code, path = entry.split("|",1)
-        norm_path = path.rstrip("/")
-        if norm_path == full or norm_path.startswith(full + "/"):
-            bs = git_face_sym(code)
-            if bs is None:
-                g = classify(code)
-                gg = "modified" if g == "staged_modified" else g
-                if gg not in face_map:
-                    continue
-                bs = (face_map[gg], symbol_map[gg])
-            face, sym = bs
-            # severity based on symbol
-            sev = severity.get(sym, 0)
-            if sev > best_sev:
-                best_sev = sev
-                best = (face, sym)
-                best_face, best_sym = face, sym
-    if best is not None and idx not in seen_lines:
-        seen_lines.add(idx)
-        flag_entries.append(f"'{idx}|{{{best_face}}}{best_sym}'")
-        # also add dir line to regex highlight group so collapsed dir gets line color
-        dir_clean = get_clean_name(lines[idx-1])
-        dir_esc = re.escape(dir_clean).replace(r'\-', '-')
-        face_to_group = {"yellow": "modified", "green": "staged", "magenta": "untracked", "cyan": "renamed", "red": "modified"}
-        grp = face_to_group.get(best_face, "modified")
-        groups[grp].append(dir_esc)
-# re-dedup after adding collapsed dirs
+    s = line.lstrip()
+    if not (s.startswith("+ ") or s.startswith("- ")):
+        continue
+    full = resolve_full_path_py(lines, idx, home, pwd)
+    if not full:
+        continue
+    norm_full = os.path.realpath(full) if os.path.exists(full) else os.path.normpath(full)
+    clean_name = get_clean_name(line)
+
+    # 1. Visible file (- file)
+    if not line.rstrip().endswith("/"):
+        if norm_full in status_map:
+            face, sym = status_map[norm_full]
+            seen_lines.add(idx)
+            flag_entries.append(f"'{idx}|{{{face}}}{sym}'")
+            esc = re.escape(clean_name).replace(r'\-', '-')
+            grp = face_to_group.get(face, "modified")
+            groups[grp].append(esc)
+
+    # 2. Collapsed folder (+ dir/)
+    elif s.startswith("+ "):
+        dir_prefix = norm_full.rstrip("/") + "/"
+        best = None
+        best_sev = -1
+        for p, (face, sym) in status_map.items():
+            if p == norm_full or p.startswith(dir_prefix):
+                sev = severity.get(sym, 0)
+                if sev > best_sev:
+                    best_sev = sev
+                    best = (face, sym)
+        if best is not None:
+            face, sym = best
+            seen_lines.add(idx)
+            flag_entries.append(f"'{idx}|{{{face}}}{sym}'")
+            dir_esc = re.escape(clean_name).replace(r'\-', '-')
+            grp = face_to_group.get(face, "modified")
+            groups[grp].append(dir_esc)
+
 for k in groups:
     groups[k] = sorted(set(groups[k]))
 
@@ -2717,7 +2682,7 @@ EOF
 "
         fi
 
-        printf '%s %%{ set-option buffer kiki_tree_git_overlay true; %s echo -markup "{green}kiki-tree: git overlay on ( = to toggle off)" }\n' "$eval_cmd" "$cmds"
+        printf '%s %%{ set-option buffer kiki_tree_git_overlay true; %s echo -markup "{green}kiki-tree: git overlay on ( v to toggle off)" }\n' "$eval_cmd" "$cmds"
     }}
 
 # Refresh gutter when tree structure changes (expand/collapse) while overlay is on

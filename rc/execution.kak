@@ -83,7 +83,7 @@ define-command -override -hidden -params 2 \
             fi
         fi
 
-        printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
+        printf 'nop %%sh{ rm -f -- "%s" 2>/dev/null }\n' "$tmp_out"
     }}
 
 # Execute command and return in scratch buffer
@@ -118,7 +118,7 @@ define-command -override -hidden -params 1 \
         printf 'kiki-set-modeline kiki-buffer\n'
         printf 'execute-keys -draft %%{<percent>d!cat "%s"<ret>}\n' "$tmp_out"
         printf 'try %%{ ansi-render }\n'
-        printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
+        printf 'nop %%sh{ rm -f -- "%s" 2>/dev/null }\n' "$tmp_out"
     }}
 
 # Execute bash command and pipe output to a new fifo buffer

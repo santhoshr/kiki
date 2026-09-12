@@ -1484,7 +1484,7 @@ define-command -override -hidden -params 1 \
             printf '%s %%{ %s }\n' "$eval_cmd" "$commands_to_eval"
         fi
 
-        printf 'nop %%sh{ rm -f "%s" }\n' "$tmp_out"
+        printf 'nop %%sh{ rm -f -- "%s" 2>/dev/null }\n' "$tmp_out"
     }}
 
 # Preview target in preview client

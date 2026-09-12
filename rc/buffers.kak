@@ -27,6 +27,9 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer normal * ':kiki-smart-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map buffer normal <minus> ':kiki-smart-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map buffer normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
+    map buffer normal v ':kiki-smart-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag) in tree'
+    map buffer normal f ':kiki-smart-filter<ret>' -docstring 'Filter tree to git-related files'
+    map buffer normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
     map buffer normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map buffer normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map buffer insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
@@ -50,6 +53,9 @@ hook -group kiki global WinSetOption filetype=kiki %{
     map window normal * ':kiki-smart-expand-recursive<ret>' -docstring 'Expand directory recursively'
     map window normal <minus> ':kiki-smart-narrow<ret>' -docstring 'Trim unselected subtrees/siblings'
     map window normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
+    map window normal v ':kiki-smart-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag) in tree'
+    map window normal f ':kiki-smart-filter<ret>' -docstring 'Filter tree to git-related files'
+    map window normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
     map window normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map window normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map window insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
@@ -702,6 +708,48 @@ define-command -override -hidden \
                 target_cmd="execute-keys <minus>"
             fi
             printf '%s %%{ %s }\n' "$eval_cmd" "$target_cmd"
+        }
+    }}
+
+define-command -override -hidden \
+    kiki-smart-overlay %{ evaluate-commands -draft %{
+        execute-keys "<esc>x"
+        evaluate-commands %sh{
+            trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-git-overlay }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-tree-git-overlay }\n' "$eval_cmd"
+            else
+                printf '%s %%{ execute-keys v }\n' "$eval_cmd"
+            fi
+        }
+    }}
+
+define-command -override -hidden \
+    kiki-smart-filter %{ evaluate-commands -draft %{
+        execute-keys "<esc>x"
+        evaluate-commands %sh{
+            trimmed=$(printf "%s\n" "$kak_selection" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")
+            eval_cmd="evaluate-commands"
+            [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+            case "$kak_bufname" in
+                \*kiki-file-tree\*|*.kikitree)
+                    printf '%s %%{ kiki-tree-filter-git }\n' "$eval_cmd"
+                    exit 0
+                    ;;
+            esac
+            if printf "%s\n" "$trimmed" | grep -Eq "^[+-][[:space:]]" || printf "%s\n" "$trimmed" | grep -Eq "^(~|/|\.|\.\.)"; then
+                printf '%s %%{ kiki-tree-filter-git }\n' "$eval_cmd"
+            else
+                printf '%s %%{ execute-keys f }\n' "$eval_cmd"
+            fi
         }
     }}
 

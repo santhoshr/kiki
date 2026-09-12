@@ -3,6 +3,8 @@
 declare-option -docstring "Show hidden/dot files in kiki-file-tree" bool kiki_tree_show_hidden false
 declare-option -hidden bool kiki_tree_git_overlay false
 declare-option -hidden line-specs kiki_tree_git_flags
+declare-option -hidden range-specs kiki_tree_git_ranges
+declare-option -hidden str-list kiki_tree_overlay_roots
 
 # Set buffer type and local hooks/keys for kiki-file-tree scratch buffers and tree files
 hook -group kiki global BufCreate \*kiki-file-tree\* %{
@@ -404,56 +406,78 @@ define-command -override -hidden -params 1..2 \
         fi
     }}
 
-# Filter file tree to git-related files (like - on selection but auto-selects git files including untracked)
+# Filter file tree to git-related files (confined to active tree branch around cursor)
 define-command -override -docstring "kiki-tree-filter-git: filter tree to git-related files with subfolder expansion" \
     kiki-tree-filter-git %{ evaluate-commands %sh{
         tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
         printf 'write -force "%s"\n' "$tmp_file"
-        printf 'kiki-tree-filter-git-do "%s"\n' "$tmp_file"
+        printf 'kiki-tree-filter-git-do "%s" "%s"\n' "$tmp_file" "$kak_cursor_line"
     }}
 
-define-command -override -hidden -params 1 \
+define-command -override -hidden -params 1..2 \
     kiki-tree-filter-git-do %{ evaluate-commands %sh{
         tmp_file="$1"
+        cur_line="${2:-1}"
         eval_cmd="evaluate-commands"
         [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-        # Collect roots from tree buffer
-        status_dump=$(mktemp "${TMPDIR:-/tmp}"/kiki-git-status.XXXXXXXX)
         out_filtered=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-filtered.XXXXXXXX)
-        while IFS= read -r line; do
-            case "$line" in
-                "- "*) r="${line#- }"; r="${r%/}"; case "$r" in "~"/*) r="${HOME}/${r#"~"/}";; "~") r="${HOME}";; /*) ;; "."|"./") r="$PWD";; *) r="$PWD/${r#./}";; esac; [ -d "$r" ] && top=$(git -C "$r" rev-parse --show-toplevel 2>/dev/null); if [ -n "$top" ]; then git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do code=$(printf '%s' "$s" | cut -c1-2); f=$(printf '%s' "$s" | cut -c4- | sed -e 's/.*-> //'); printf '%s|%s/%s\n' "$code" "$top" "$f" >> "$status_dump"; done; fi;;
-            esac
-        done < "$tmp_file"
 
-        if [ ! -s "$status_dump" ]; then
-            top=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n "$top" ]; then git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do code=$(printf '%s' "$s" | cut -c1-2); f=$(printf '%s' "$s" | cut -c4- | sed -e 's/.*-> //'); printf '%s|%s/%s\n' "$code" "$top" "$f" >> "$status_dump"; done; fi
-        fi
-
-        if [ ! -s "$status_dump" ]; then
-            [ -n "$tmp_file" ] && rm -f -- "$tmp_file" 2>/dev/null || true; [ -n "$status_dump" ] && rm -f -- "$status_dump" 2>/dev/null || true; [ -n "$out_filtered" ] && rm -f -- "$out_filtered" 2>/dev/null || true
-            printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files to filter" }\n' "$eval_cmd"
-            exit 0
-        fi
-
-        res=$(python3 - "$tmp_file" "$status_dump" "$HOME" "$PWD" "$out_filtered" << 'PYEOF'
-import os, sys
+        res=$(python3 - "$tmp_file" "$cur_line" "$HOME" "$PWD" "$out_filtered" << 'PYEOF'
+import os, sys, subprocess
 tmp_file = sys.argv[1]
-status_file = sys.argv[2]
+try: cur_line = int(sys.argv[2])
+except: cur_line = 1
 home = sys.argv[3]
 pwd = sys.argv[4]
 out_file = sys.argv[5]
+
 try:
     with open(tmp_file, 'r', encoding='utf-8', errors='replace') as f:
         lines = [l.rstrip('\r\n') for l in f]
 except:
-    sys.exit(0)
-try:
-    with open(status_file, 'r', encoding='utf-8', errors='replace') as f:
-        status_raw = [l.rstrip('\r\n') for l in f if l.strip()]
-except:
-    sys.exit(0)
+    sys.exit(1)
+
+def get_indent(s):
+    exp = s.replace("\t", "    ")
+    ind = 0
+    for ch in exp:
+        if ch == " ": ind += 1
+        else: break
+    return ind
+
+def is_tree_line(s):
+    if not s.strip() or s.lstrip().startswith('#'):
+        return False
+    return s.lstrip().startswith('+ ') or s.lstrip().startswith('- ')
+
+def find_tree_bounds(lines_arr, cur):
+    cur_idx = cur - 1
+    if cur_idx < 0 or cur_idx >= len(lines_arr):
+        return 0, len(lines_arr)
+    root_idx = cur_idx
+    if is_tree_line(lines_arr[root_idx]):
+        if get_indent(lines_arr[root_idx]) > 0:
+            for i in range(cur_idx - 1, -1, -1):
+                if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                    root_idx = i
+                    break
+    else:
+        for i in range(cur_idx - 1, -1, -1):
+            if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                root_idx = i
+                break
+        else:
+            for i in range(cur_idx, len(lines_arr)):
+                if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                    root_idx = i
+                    break
+    if not is_tree_line(lines_arr[root_idx]) or get_indent(lines_arr[root_idx]) != 0:
+        return 0, len(lines_arr)
+    tree_end = root_idx + 1
+    while tree_end < len(lines_arr) and is_tree_line(lines_arr[tree_end]) and get_indent(lines_arr[tree_end]) > 0:
+        tree_end += 1
+    return root_idx, tree_end
 
 def expand_path(p, home, pwd):
     if p.startswith("~/"): return home + p[1:]
@@ -463,49 +487,53 @@ def expand_path(p, home, pwd):
     if p.startswith("./"): return pwd + "/" + p[2:]
     return pwd + "/" + p
 
+def get_clean_name(s):
+    t = s.lstrip()
+    if t.startswith("+ "): t = t[2:].lstrip()
+    elif t.startswith("- "): t = t[2:].lstrip()
+    t = t.rstrip()
+    if t.endswith("/") and len(t) > 1: t = t.rstrip("/")
+    if t.startswith("/"): return t
+    if "/" in t: t = t.split("/")[-1]
+    return t
+
 def norm(p):
     try: return os.path.realpath(p)
     except: return os.path.normpath(p)
 
-# Collect indent-0 "- /root/" lines as tree roots
-roots = []
-for line in lines:
-    exp = line.replace("\t", "    ")
-    indent = len(exp) - len(exp.lstrip(" "))
-    if indent == 0:
-        s = exp.lstrip()
-        if s.startswith("- "):
-            clean = s[2:].rstrip("/").strip()
-            full = expand_path(clean, home, pwd)
-            roots.append(norm(full))
+tree_start, tree_end = find_tree_bounds(lines, cur_line)
+if tree_start >= tree_end:
+    sys.exit(1)
 
-# Collect git leaf files as normalized absolute paths
-git_files = set()
-for entry in status_raw:
-    if "|" not in entry:
-        continue
-    _, path = entry.split("|", 1)
-    git_files.add(norm(path))
+root_line = lines[tree_start]
+clean_root = get_clean_name(root_line)
+full_root = expand_path(clean_root, home, pwd)
+norm_root = norm(full_root)
 
-# Group git files by root
-git_files_per_root = {root: [] for root in roots}
-for gf in git_files:
-    matched = None
-    for root in roots:
-        if gf == root or gf.startswith(root.rstrip("/") + "/"):
-            matched = root
-            break
-    if matched is None:
-        matched = roots[0] if roots else None
-    if matched is not None:
-        git_files_per_root[matched].append(gf)
+# Resolve git repository for this tree root only
+try:
+    top = subprocess.check_output(['git', '-C', norm_root, 'rev-parse', '--show-toplevel'], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+except:
+    sys.exit(2)
+
+try:
+    git_out = subprocess.check_output(['git', '-C', top, 'status', '--porcelain'], stderr=subprocess.DEVNULL).decode('utf-8')
+except:
+    sys.exit(2)
+
+git_files = []
+for s in git_out.splitlines():
+    if len(s) < 4: continue
+    f = s[3:].strip()
+    if ' -> ' in f: f = f.split(' -> ')[-1]
+    abs_f = norm(os.path.join(top, f))
+    if abs_f == norm_root or abs_f.startswith(norm_root.rstrip('/') + '/'):
+        git_files.append(abs_f)
+
+if not git_files:
+    sys.exit(3)
 
 def build_tree(file_list, root):
-    """
-    Build nested dict from a list of absolute paths under root.
-    Leaf files -> empty dict {}
-    Intermediate dirs -> non-empty dict {children}
-    """
     root_node = {}
     root_stripped = root.rstrip("/")
     for f in sorted(file_list):
@@ -518,44 +546,47 @@ def build_tree(file_list, root):
             cur = cur[part]
     return root_node
 
-def emit_tree(node, indent):
-    """
-    Emit lines. Dirs (non-empty nodes) get '+ dir/' (collapsed).
-    Leaf files (empty nodes) get '- file'.
-    """
-    dirs  = sorted(k for k, v in node.items() if v)
+def emit_tree(node, indent, out_list):
+    dirs = sorted(k for k, v in node.items() if v)
     files = sorted(k for k, v in node.items() if not v)
     for d in dirs:
-        out_lines.append(f"{indent}+ {d}/")
-        emit_tree(node[d], indent + "  ")
+        out_list.append(f"{indent}+ {d}/")
+        emit_tree(node[d], indent + "  ", out_list)
     for f in files:
-        out_lines.append(f"{indent}- {f}")
+        out_list.append(f"{indent}- {f}")
 
-out_lines = []
-for root in roots:
-    out_lines.append(f"- {root}/")
-    file_list = git_files_per_root.get(root, [])
-    if not file_list:
-        continue
-    root_node = build_tree(file_list, root)
-    emit_tree(root_node, "  ")
+filtered_slice = [f"- {full_root.rstrip('/')}/"]
+root_node = build_tree(git_files, norm_root)
+emit_tree(root_node, "  ", filtered_slice)
+
+# Splice filtered slice into lines, preserving everything outside this tree branch
+new_lines = lines[:tree_start] + filtered_slice + lines[tree_end:]
 
 with open(out_file, 'w', encoding='utf-8') as out:
-    for l in out_lines:
+    for l in new_lines:
         out.write(l + "\n")
+
 print(out_file)
+print(str(tree_start + 1))
 PYEOF
 )
-        filtered_file=$(printf '%s\n' "$res" | tail -n 1)
-        if [ -z "$filtered_file" ] || [ ! -f "$filtered_file" ]; then
-            filtered_file="$out_filtered"
-        fi
-        if [ ! -s "$filtered_file" ]; then
-            [ -n "$tmp_file" ] && rm -f -- "$tmp_file" 2>/dev/null || true; [ -n "$status_dump" ] && rm -f -- "$status_dump" 2>/dev/null || true; [ -n "$out_filtered" ] && rm -f -- "$out_filtered" 2>/dev/null || true
-            printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files to filter" }\n' "$eval_cmd"
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            [ -n "$tmp_file" ] && rm -f -- "$tmp_file" 2>/dev/null || true
+            [ -n "$out_filtered" ] && rm -f -- "$out_filtered" 2>/dev/null || true
+            if [ $rc -eq 3 ]; then
+                printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files in current tree" }\n' "$eval_cmd"
+            else
+                printf '%s %%{ echo -markup "{yellow}kiki-tree: not a git tree" }\n' "$eval_cmd"
+            fi
             exit 0
         fi
-        printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" "%s" "%s" 2>/dev/null } }\n' "$eval_cmd" "$filtered_file" "$tmp_file" "$status_dump" "$out_filtered"
+
+        filtered_file=$(printf '%s\n' "$res" | head -n 1)
+        new_line=$(printf '%s\n' "$res" | tail -n 1)
+        [ -z "$new_line" ] && new_line=1
+
+        printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select %s.1,%s.1; nop %%sh{ rm -f -- "%s" "%s" 2>/dev/null } }\n' "$eval_cmd" "$filtered_file" "$new_line" "$new_line" "$tmp_file" "$out_filtered"
         # refresh gutter if overlay is on (new buffer content)
         if [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
             printf '%s %%{ kiki-tree-git-overlay-refresh }\n' "$eval_cmd"
@@ -2337,215 +2368,133 @@ EOF
         fi
     }}
 
-# Toggle git status overlay (highlight + flag) on + key anywhere in file tree
+# Toggle git status overlay (highlight + flag) on v key in file tree, scoped to current tree
 define-command -override -docstring "kiki-tree-git-overlay: toggle git status highlight and flag overlay in file tree" \
     kiki-tree-git-overlay %{ evaluate-commands %sh{
-        if [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
-            printf 'set-option buffer kiki_tree_git_overlay false\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_modified }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_flag_modified }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_staged }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_flag_staged }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_untracked }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_flag_untracked }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_renamed }\n'
-            printf 'try %%{ remove-highlighter buffer/kiki_tree_git_flag_renamed }\n'
-            printf 'try %%{ remove-highlighter window/kiki_tree_git_gutter }\n'
-            printf 'set-option window kiki_tree_git_flags %%val{timestamp}\n'
-            printf 'echo -markup "{yellow}kiki-tree: git overlay off"\n'
-            exit 0
-        fi
-
         tmp_buf=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-buf.XXXXXXXX)
         printf 'write -sync -force "%s"\n' "$tmp_buf"
-        printf 'kiki-tree-git-overlay-do "%s"\n' "$tmp_buf"
+        printf 'kiki-tree-git-overlay-do "%s" "%s" toggle %%opt{kiki_tree_overlay_roots}\n' "$tmp_buf" "$kak_cursor_line"
     }}
 
-define-command -override -hidden -params 1 \
+define-command -override -hidden -params 3.. \
     kiki-tree-git-overlay-do %{ evaluate-commands %sh{
         tmp_buf="$1"
+        cur_line="${2:-1}"
+        mode="$3"
+        shift 3
         eval_cmd="evaluate-commands"
         [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-        # Collect roots from tree buffer
-        status_dump=$(mktemp "${TMPDIR:-/tmp}"/kiki-git-status.XXXXXXXX)
-        while IFS= read -r line; do
-            case "$line" in
-                "- "*|"+ "*)
-                    r="${line#[+-] }"
-                    r="${r%/}"
-                    case "$r" in
-                        "~"/*) r="${HOME}/${r#"~"/}" ;;
-                        "~") r="${HOME}" ;;
-                        /*) ;;
-                        "."|"./") r="${PWD}" ;;
-                        *) r="${PWD}/${r#./}" ;;
-                    esac
-                    [ -d "$r" ] && top=$(git -C "$r" rev-parse --show-toplevel 2>/dev/null)
-                    if [ -n "$top" ]; then
-                        git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do
-                            code=$(printf '%s' "$s" | cut -c1-2)
-                            f=$(printf '%s' "$s" | cut -c4- | sed -e 's/.*-> //')
-                            # store as code|top/f
-                            printf '%s|%s/%s\n' "$code" "$top" "$f" >> "$status_dump"
-                        done
-                    fi
-                    ;;
-            esac
-        done < "$tmp_buf"
+        res=$(python3 - "$tmp_buf" "$cur_line" "$mode" "$HOME" "$PWD" "$@" << 'PYEOF'
+import os, sys, subprocess, shlex
 
-        if [ ! -s "$status_dump" ]; then
-            top=$(git rev-parse --show-toplevel 2>/dev/null)
-            if [ -n "$top" ]; then
-                git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do
-                    code=$(printf '%s' "$s" | cut -c1-2)
-                    f=$(printf '%s' "$s" | cut -c4- | sed -e 's/.*-> //')
-                    printf '%s|%s/%s\n' "$code" "$top" "$f" >> "$status_dump"
-                done
-            fi
-        fi
-
-        if [ ! -s "$status_dump" ]; then
-            [ -n "$tmp_buf" ] && rm -f -- "$tmp_buf" 2>/dev/null || true
-            [ -n "$status_dump" ] && rm -f -- "$status_dump" 2>/dev/null || true
-            printf '%s %%{ echo -markup "{yellow}kiki-tree: no git changes" }\n' "$eval_cmd"
-            exit 0
-        fi
-
-        # Use python to map status files to visible tree basenames and build regex groups + gutter flags
-        res=$(python3 - "$tmp_buf" "$status_dump" "$HOME" "$PWD" << 'PYEOF'
-import os, re, sys
 tmp_file = sys.argv[1]
-status_file = sys.argv[2]
-home = sys.argv[3]
-pwd = sys.argv[4]
+try: cur_line = int(sys.argv[2])
+except: cur_line = 1
+mode = sys.argv[3]
+home = sys.argv[4]
+pwd = sys.argv[5]
+active_roots = sys.argv[6:]
 
 try:
     with open(tmp_file, 'r', encoding='utf-8', errors='replace') as f:
         lines = [l.rstrip('\r\n') for l in f]
 except:
-    print(";")
-    print("none")
-    sys.exit(0)
-try:
-    with open(status_file, 'r', encoding='utf-8', errors='replace') as f:
-        status_raw = [l.rstrip('\r\n') for l in f if l.strip()]
-except:
-    print(";")
-    print("none")
-    sys.exit(0)
-
-# build set of basenames per status type
-def classify(code):
-    if code == "??" or code.strip() == "??":
-        return "untracked"
-    c = (code + "  ")[:2]
-    x, y = c[0], c[1]
-    if x != " " and x != "?" and x != "!":
-        if y != " " and y != "?" and y != "!":
-            return "staged_modified"
-        return "staged"
-    if y != " " and y != "?" and y != "!":
-        return "modified"
-    if "?" in code:
-        return "untracked"
-    if c.strip() and c.strip()[0] in "MADRC":
-        return "staged"
-    return "modified"
+    sys.exit(1)
 
 def get_clean_name(s):
     t = s.lstrip()
-    if t.startswith("+ "):
-        t = t[2:].lstrip()
-    elif t.startswith("- "):
-        t = t[2:].lstrip()
+    if t.startswith("+ "): t = t[2:].lstrip()
+    elif t.startswith("- "): t = t[2:].lstrip()
     t = t.rstrip()
-    if t.endswith("/") and len(t) > 1:
-        t = t.rstrip("/")
-    # root is absolute path, keep full
-    if t.startswith("/"):
-        return t
-    if "/" in t:
-        t = t.split("/")[-1]
+    if t.endswith("/") and len(t) > 1: t = t.rstrip("/")
+    if t.startswith("/"): return t
+    if "/" in t: t = t.split("/")[-1]
     return t
 
-def join_esc(lst):
-    return "|".join(lst) if lst else ""
+def get_indent(s):
+    exp = s.replace("\t", "    ")
+    ind = 0
+    for ch in exp:
+        if ch == " ": ind += 1
+        else: break
+    return ind
 
-# gutter flags: letters N/A/S/M/R/C with colors
-# N untracked, A staged new, S staged modification, M modified worktree, R renamed, C conflict
-def git_face_sym(code):
-    c = (code + "  ")[:2]
-    if c == "??":
-        return ("magenta", "N")
-    if c[0] == "A" and c[1] == " ":
-        return ("green", "A")
-    if c[0] == "M" and c[1] == " ":
-        return ("green", "S")
-    if c[1] == "M" or c[1] == "D":
-        return ("yellow", "M")
-    if c[0] == "R":
-        return ("cyan", "R")
-    if "C" in code or "U" in code:
-        return ("red", "C")
-    return None
+def is_tree_line(s):
+    if not s.strip() or s.lstrip().startswith('#'):
+        return False
+    return s.lstrip().startswith('+ ') or s.lstrip().startswith('- ')
 
-face_map = {"modified": "yellow", "staged": "green", "untracked": "magenta", "renamed": "cyan"}
-symbol_map = {"modified": "M", "staged": "S", "untracked": "N", "renamed": "R"}
-
-def get_indent_py(s):
-    s_exp = s.replace("\t", "    ")
-    indent = 0
-    for ch in s_exp:
-        if ch == " ":
-            indent += 1
-        else:
-            break
-    rest = s_exp.lstrip()
-    while rest.startswith("+ ") or rest.startswith("- "):
-        indent += 2
-        rest = rest[2:].lstrip()
-        extra = 0
-        for ch in rest:
-            if ch == " ":
-                extra += 1
-            else:
+def find_tree_bounds(lines_arr, cur):
+    cur_idx = cur - 1
+    if cur_idx < 0 or cur_idx >= len(lines_arr):
+        return 0, 0
+    root_idx = cur_idx
+    if is_tree_line(lines_arr[root_idx]):
+        if get_indent(lines_arr[root_idx]) > 0:
+            for i in range(cur_idx - 1, -1, -1):
+                if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                    root_idx = i
+                    break
+    else:
+        for i in range(cur_idx - 1, -1, -1):
+            if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                root_idx = i
                 break
-        indent += extra
-        rest = rest.lstrip()
-        break
-    return indent
+        else:
+            for i in range(cur_idx, len(lines_arr)):
+                if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+                    root_idx = i
+                    break
+    if not is_tree_line(lines_arr[root_idx]) or get_indent(lines_arr[root_idx]) != 0:
+        return 0, 0
+    tree_end = root_idx + 1
+    while tree_end < len(lines_arr) and is_tree_line(lines_arr[tree_end]) and get_indent(lines_arr[tree_end]) > 0:
+        tree_end += 1
+    return root_idx, tree_end
+
+def find_all_trees(lines_arr):
+    trees = []
+    i = 0
+    while i < len(lines_arr):
+        if is_tree_line(lines_arr[i]) and get_indent(lines_arr[i]) == 0:
+            start = i
+            end = i + 1
+            while end < len(lines_arr) and is_tree_line(lines_arr[end]) and get_indent(lines_arr[end]) > 0:
+                end += 1
+            trees.append((start, end))
+            i = end
+        else:
+            i += 1
+    return trees
 
 def expand_path_py(p, home, pwd):
-    if p.startswith("~/"):
-        return home + p[1:]
-    if p == "~":
-        return home
-    if p.startswith("/"):
-        return p
-    if p in (".", "./"):
-        return pwd
-    if p.startswith("./"):
-        return pwd + "/" + p[2:]
+    if p.startswith("~/"): return home + p[1:]
+    if p == "~": return home
+    if p.startswith("/"): return p
+    if p in (".", "./"): return pwd
+    if p.startswith("./"): return pwd + "/" + p[2:]
     return pwd + "/" + p
 
+def norm(p):
+    try: return os.path.realpath(p)
+    except: return os.path.normpath(p)
+
 def resolve_full_path_py(all_lines, idx, home, pwd):
-    try:
-        t_line = all_lines[idx-1]
-    except:
-        return ""
+    try: t_line = all_lines[idx-1]
+    except: return ""
     t_clean = get_clean_name(t_line)
-    t_indent = get_indent_py(t_line)
+    t_indent = get_indent(t_line)
     if t_indent == 0:
         return expand_path_py(t_clean, home, pwd)
     parts = [t_clean]
     cur_indent = t_indent
     for i in range(idx-2, -1, -1):
         line = all_lines[i]
-        if not line.strip() or line.lstrip().startswith("#"):
+        if not line.strip() or line.lstrip().startswith('#'):
             continue
-        ind = get_indent_py(line)
-        if ind < cur_indent and line.rstrip().endswith("/"):
+        ind = get_indent(line)
+        if ind < cur_indent and line.rstrip().endswith('/'):
             parts.append(get_clean_name(line))
             cur_indent = ind
             if ind == 0:
@@ -2558,131 +2507,148 @@ def resolve_full_path_py(all_lines, idx, home, pwd):
             full = full + "/" + p
     return full
 
-status_map = {}
-for entry in status_raw:
-    if "|" not in entry: continue
-    code, path = entry.split("|", 1)
-    norm_path = os.path.realpath(path.rstrip("/")) if os.path.exists(path.rstrip("/")) else os.path.normpath(path.rstrip("/"))
-    bs = git_face_sym(code)
-    if bs is None:
-        g = classify(code)
-        gg = "modified" if g == "staged_modified" else g
-        if gg in face_map:
-            bs = (face_map[gg], symbol_map[gg])
-    if bs is not None:
-        status_map[norm_path] = bs
+def git_face_sym(code):
+    c = (code + "  ")[:2]
+    if c == "??": return ("magenta", "N")
+    if c[0] == "A" and c[1] == " ": return ("green", "A")
+    if c[0] == "M" and c[1] == " ": return ("green", "S")
+    if c[1] == "M" or c[1] == "D": return ("yellow", "M")
+    if c[0] == "R": return ("cyan", "R")
+    if "C" in code or "U" in code: return ("red", "C")
+    return None
 
-severity = {"C": 5, "N": 4, "M": 3, "S": 3, "A": 3, "R": 2, "?": 4, "●": 3}
-face_to_group = {"yellow": "modified", "green": "staged", "magenta": "untracked", "cyan": "renamed", "red": "modified"}
-groups = {"modified":[], "staged":[], "untracked":[], "renamed":[]}
+severity = {"C": 5, "N": 4, "M": 3, "S": 3, "A": 3, "R": 2}
+
+roots_set = set(active_roots)
+t_start, t_end = find_tree_bounds(lines, cur_line)
+cur_root = ""
+if t_start < t_end:
+    cur_root = norm(expand_path_py(get_clean_name(lines[t_start]), home, pwd))
+
+if mode == "toggle":
+    if cur_root:
+        if cur_root in roots_set:
+            roots_set.remove(cur_root)
+            toggle_action = "off"
+        else:
+            roots_set.add(cur_root)
+            toggle_action = "on"
+    else:
+        toggle_action = "noop"
+else:
+    toggle_action = "refresh"
+
+all_trees = find_all_trees(lines)
+active_tree_spans = []
+for start, end in all_trees:
+    r_clean = get_clean_name(lines[start])
+    r_full = norm(expand_path_py(r_clean, home, pwd))
+    if r_full in roots_set:
+        active_tree_spans.append((start, end, r_full))
+
 flag_entries = []
-seen_lines = set()
+range_entries = []
 
-# Process each tree line directly by resolving its exact full path
-for idx, line in enumerate(lines, start=1):
-    s = line.lstrip()
-    if not (s.startswith("+ ") or s.startswith("- ")):
+for start, end, r_full in active_tree_spans:
+    try:
+        top = subprocess.check_output(['git', '-C', r_full, 'rev-parse', '--show-toplevel'], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        git_out = subprocess.check_output(['git', '-C', top, 'status', '--porcelain'], stderr=subprocess.DEVNULL).decode('utf-8')
+    except Exception:
         continue
-    full = resolve_full_path_py(lines, idx, home, pwd)
-    if not full:
-        continue
-    norm_full = os.path.realpath(full) if os.path.exists(full) else os.path.normpath(full)
-    clean_name = get_clean_name(line)
 
-    # 1. Visible file (- file)
-    if not line.rstrip().endswith("/"):
-        if norm_full in status_map:
-            face, sym = status_map[norm_full]
-            seen_lines.add(idx)
-            flag_entries.append(f"'{idx}|{{{face}}}{sym}'")
-            esc = re.escape(clean_name).replace(r'\-', '-')
-            grp = face_to_group.get(face, "modified")
-            groups[grp].append(esc)
+    status_map = {}
+    for s in git_out.splitlines():
+        if len(s) < 3: continue
+        code = s[:2]
+        f = s[3:].strip()
+        if ' -> ' in f: f = f.split(' -> ')[-1]
+        abs_f = norm(os.path.join(top, f))
+        bs = git_face_sym(code)
+        if bs:
+            status_map[abs_f] = bs
 
-    # 2. Collapsed folder (+ dir/)
-    elif s.startswith("+ "):
-        dir_prefix = norm_full.rstrip("/") + "/"
-        best = None
-        best_sev = -1
-        for p, (face, sym) in status_map.items():
-            if p == norm_full or p.startswith(dir_prefix):
-                sev = severity.get(sym, 0)
-                if sev > best_sev:
-                    best_sev = sev
-                    best = (face, sym)
-        if best is not None:
-            face, sym = best
-            seen_lines.add(idx)
-            flag_entries.append(f"'{idx}|{{{face}}}{sym}'")
-            dir_esc = re.escape(clean_name).replace(r'\-', '-')
-            grp = face_to_group.get(face, "modified")
-            groups[grp].append(dir_esc)
+    for idx in range(start + 1, end + 1):
+        line = lines[idx - 1]
+        s = line.lstrip()
+        if not (s.startswith('+ ') or s.startswith('- ')):
+            continue
+        full = resolve_full_path_py(lines, idx, home, pwd)
+        if not full: continue
+        norm_full = norm(full)
+        line_len = len(line)
+        if line_len == 0: continue
 
-for k in groups:
-    groups[k] = sorted(set(groups[k]))
+        # 1. Visible file (- file)
+        if not line.rstrip().endswith('/'):
+            if norm_full in status_map:
+                face, sym = status_map[norm_full]
+                flag_entries.append(f"'{idx}|{{{face}}}{sym}'")
+                range_entries.append(f"'{idx}.1,{idx}.{line_len}|{face}'")
+        # 2. Collapsed folder (+ dir/)
+        elif s.startswith('+ '):
+            dir_prefix = norm_full.rstrip('/') + '/'
+            best = None
+            best_sev = -1
+            for p, (face, sym) in status_map.items():
+                if p == norm_full or p.startswith(dir_prefix):
+                    sev = severity.get(sym, 0)
+                    if sev > best_sev:
+                        best_sev = sev
+                        best = (face, sym)
+            if best:
+                face, sym = best
+                flag_entries.append(f"'{idx}|{{{face}}}{sym}'")
+                range_entries.append(f"'{idx}.1,{idx}.{line_len}|{face}'")
 
-pats_line = f"{join_esc(groups['modified'])};{join_esc(groups['staged'])};{join_esc(groups['untracked'])};{join_esc(groups['renamed'])}"
-flag_line = " ".join(flag_entries) if flag_entries else "none"
-print(pats_line)
-print(flag_line)
+print(" ".join(shlex.quote(r) for r in sorted(roots_set)))
+print(" ".join(flag_entries))
+print(" ".join(range_entries))
+print(toggle_action)
 PYEOF
 )
-        pats=$(printf '%s\n' "$res" | head -n 1)
-        flag_specs=$(printf '%s\n' "$res" | tail -n 1)
         [ -n "$tmp_buf" ] && rm -f -- "$tmp_buf" 2>/dev/null || true
-        [ -n "$status_dump" ] && rm -f -- "$status_dump" 2>/dev/null || true
 
-        IFS=';' read -r mod_pat staged_pat untracked_pat renamed_pat <<EOF
-$pats
-EOF
-
-        # If nothing to highlight, still toggle on
-        has_any=0
-        [ -n "$mod_pat" ] && has_any=1
-        [ -n "$staged_pat" ] && has_any=1
-        [ -n "$untracked_pat" ] && has_any=1
-        [ -n "$renamed_pat" ] && has_any=1
-
-        if [ "$has_any" -eq 0 ]; then
-            printf '%s %%{ echo -markup "{yellow}kiki-tree: no git changes to highlight" }\n' "$eval_cmd"
+        if [ -z "$res" ]; then
             exit 0
         fi
 
-        # Build highlighter commands: 1=line color, 3=flag column (marker)
-        cmds=""
-        if [ -n "$mod_pat" ]; then
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_modified }; add-highlighter buffer/kiki_tree_git_modified regex \"^\\h*[+-]\\h+(?:${mod_pat})\\h*$\" 0:yellow
-"
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_flag_modified }; add-highlighter buffer/kiki_tree_git_flag_modified regex \"^\\h*([+-])\\h+(?:${mod_pat})\\h*$\" 1:yellow+b
-"
-        fi
-        if [ -n "$staged_pat" ]; then
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_staged }; add-highlighter buffer/kiki_tree_git_staged regex \"^\\h*[+-]\\h+(?:${staged_pat})\\h*$\" 0:green
-"
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_flag_staged }; add-highlighter buffer/kiki_tree_git_flag_staged regex \"^\\h*([+-])\\h+(?:${staged_pat})\\h*$\" 1:green+b
-"
-        fi
-        if [ -n "$untracked_pat" ]; then
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_untracked }; add-highlighter buffer/kiki_tree_git_untracked regex \"^\\h*[+-]\\h+(?:${untracked_pat})\\h*$\" 0:magenta
-"
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_flag_untracked }; add-highlighter buffer/kiki_tree_git_flag_untracked regex \"^\\h*([+-])\\h+(?:${untracked_pat})\\h*$\" 1:magenta+b
-"
-        fi
-        if [ -n "$renamed_pat" ]; then
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_renamed }; add-highlighter buffer/kiki_tree_git_renamed regex \"^\\h*[+-]\\h+(?:${renamed_pat})\\h*$\" 0:cyan
-"
-            cmds="${cmds}try %{ remove-highlighter buffer/kiki_tree_git_flag_renamed }; add-highlighter buffer/kiki_tree_git_flag_renamed regex \"^\\h*([+-])\\h+(?:${renamed_pat})\\h*$\" 1:cyan+b
-"
-        fi
-        # gutter: flag_lines with line-specs (shows N/A/S/M/R in gutter)
-        if [ -n "$flag_specs" ] && [ "$flag_specs" != "none" ]; then
-            cmds="${cmds}try %{ remove-highlighter window/kiki_tree_git_gutter }; add-highlighter window/kiki_tree_git_gutter flag-lines default kiki_tree_git_flags
-"
-            cmds="${cmds}set-option window kiki_tree_git_flags %val{timestamp} ${flag_specs}
-"
+        roots_quoted=$(printf '%s\n' "$res" | sed -n '1p')
+        flag_specs=$(printf '%s\n' "$res" | sed -n '2p')
+        range_specs=$(printf '%s\n' "$res" | sed -n '3p')
+        toggle_action=$(printf '%s\n' "$res" | sed -n '4p')
+
+        # Clean legacy buffer regex highlighters if present
+        cleanup="try %{ remove-highlighter buffer/kiki_tree_git_modified }; try %{ remove-highlighter buffer/kiki_tree_git_flag_modified }; try %{ remove-highlighter buffer/kiki_tree_git_staged }; try %{ remove-highlighter buffer/kiki_tree_git_flag_staged }; try %{ remove-highlighter buffer/kiki_tree_git_untracked }; try %{ remove-highlighter buffer/kiki_tree_git_flag_untracked }; try %{ remove-highlighter buffer/kiki_tree_git_renamed }; try %{ remove-highlighter buffer/kiki_tree_git_flag_renamed };"
+
+        if [ -z "$roots_quoted" ]; then
+            # All trees have overlay toggled off
+            printf '%s %%{ set-option buffer kiki_tree_overlay_roots; set-option buffer kiki_tree_git_overlay false; %s try %%{ remove-highlighter window/kiki_tree_git_gutter }; try %%{ remove-highlighter window/kiki_tree_git_lines }; set-option window kiki_tree_git_flags %%val{timestamp}; set-option window kiki_tree_git_ranges %%val{timestamp}; echo -markup "{yellow}kiki-tree: git overlay off" }\n' "$eval_cmd" "$cleanup"
+            exit 0
         fi
 
-        printf '%s %%{ set-option buffer kiki_tree_git_overlay true; %s echo -markup "{green}kiki-tree: git overlay on ( v to toggle off)" }\n' "$eval_cmd" "$cmds"
+        cmds="${cleanup}set-option buffer kiki_tree_git_overlay true; set-option buffer kiki_tree_overlay_roots ${roots_quoted};"
+
+        if [ -n "$flag_specs" ]; then
+            cmds="${cmds}try %{ remove-highlighter window/kiki_tree_git_gutter }; add-highlighter window/kiki_tree_git_gutter flag-lines default kiki_tree_git_flags; set-option window kiki_tree_git_flags %val{timestamp} ${flag_specs};"
+        else
+            cmds="${cmds}try %{ remove-highlighter window/kiki_tree_git_gutter }; set-option window kiki_tree_git_flags %val{timestamp};"
+        fi
+
+        if [ -n "$range_specs" ]; then
+            cmds="${cmds}try %{ remove-highlighter window/kiki_tree_git_lines }; add-highlighter window/kiki_tree_git_lines ranges kiki_tree_git_ranges; set-option window kiki_tree_git_ranges %val{timestamp} ${range_specs};"
+        else
+            cmds="${cmds}try %{ remove-highlighter window/kiki_tree_git_lines }; set-option window kiki_tree_git_ranges %val{timestamp};"
+        fi
+
+        if [ "$toggle_action" = "on" ]; then
+            msg='echo -markup "{green}kiki-tree: git overlay on for current tree (v to toggle off)"'
+        elif [ "$toggle_action" = "off" ]; then
+            msg='echo -markup "{yellow}kiki-tree: git overlay off for current tree"'
+        else
+            msg=''
+        fi
+
+        printf '%s %%{ %s %s }\n' "$eval_cmd" "$cmds" "$msg"
     }}
 
 # Refresh gutter when tree structure changes (expand/collapse) while overlay is on
@@ -2690,7 +2656,7 @@ define-command -override -hidden kiki-tree-git-overlay-refresh %{ evaluate-comma
     if [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
         tmp_buf=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-buf.XXXXXXXX)
         printf 'write -sync -force "%s"\n' "$tmp_buf"
-        printf 'kiki-tree-git-overlay-do "%s"\n' "$tmp_buf"
+        printf 'kiki-tree-git-overlay-do "%s" "%s" refresh %%opt{kiki_tree_overlay_roots}\n' "$tmp_buf" "$kak_cursor_line"
     fi
 }}
 

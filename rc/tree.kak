@@ -9,6 +9,7 @@ hook -group kiki global BufCreate \*kiki-file-tree\* %{
     set-option buffer kiki_buffer_type kiki-buffer
     set-option buffer filetype kiki
     map buffer normal = ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
+    map buffer normal + ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
 }
 
 hook -group kiki global BufOpenFile .*\.kikitree$ %{
@@ -24,6 +25,7 @@ hook -group kiki global BufSetOption filetype=kiki-tree %{
 hook -group kiki global WinSetOption filetype=kiki-tree %{
     kiki-set-modeline kiki-buffer
     map window normal = ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
+    map window normal + ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
 }
 
 hook -group kiki-tree-overlay global WinSetOption filetype=kiki %{
@@ -31,6 +33,7 @@ hook -group kiki-tree-overlay global WinSetOption filetype=kiki %{
         case "$kak_bufname" in
             \*kiki-file-tree\*)
                 printf 'map window normal = :kiki-tree-git-overlay<ret> -docstring "Toggle git status overlay (highlight + flag)"\n'
+                printf 'map window normal + :kiki-tree-filter-git<ret> -docstring "Filter to git-related files (expand subfolders)"\n'
                 ;;
         esac
     }
@@ -395,6 +398,164 @@ define-command -override -hidden -params 1..2 \
         }'
         if [ -f "${tmp_file}.out" ] && [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
             printf 'kiki-tree-git-overlay-refresh\n'
+        fi
+    }}
+
+# Filter file tree to git-related files (like - on selection but auto-selects git files including untracked)
+define-command -override -docstring "kiki-tree-filter-git: filter tree to git-related files with subfolder expansion" \
+    kiki-tree-filter-git %{ evaluate-commands %sh{
+        tmp_file=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-buf.XXXXXXXX)
+        printf 'write -force "%s"\n' "$tmp_file"
+        printf 'kiki-tree-filter-git-do "%s"\n' "$tmp_file"
+    }}
+
+define-command -override -hidden -params 1 \
+    kiki-tree-filter-git-do %{ evaluate-commands %sh{
+        tmp_file="$1"
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        # Collect roots from tree buffer
+        status_dump=$(mktemp "${TMPDIR:-/tmp}"/kiki-git-status.XXXXXXXX)
+        out_filtered=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree-filtered.XXXXXXXX)
+        while IFS= read -r line; do
+            case "$line" in
+                "- "*) r="${line#- }"; r="${r%/}"; case "$r" in "~"/*) r="${HOME}/${r#"~"/}";; "~") r="${HOME}";; /*) ;; "."|"./") r="$PWD";; *) r="$PWD/${r#./}";; esac; [ -d "$r" ] && top=$(git -C "$r" rev-parse --show-toplevel 2>/dev/null); if [ -n "$top" ]; then git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do code=$(printf '%s' "$s" | cut -c1-2); f=$(printf '%s' "$s" | cut -c4- | sed -e 's/.*-> //'); printf '%s|%s/%s\n' "$code" "$top" "$f" >> "$status_dump"; done; fi;;
+            esac
+        done < "$tmp_file"
+
+        if [ ! -s "$status_dump" ]; then
+            top=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n "$top" ]; then git -C "$top" status --porcelain 2>/dev/null | while IFS= read -r s; do code=$(printf '%s' "$s" | cut -c1-2); f=$(printf '%s' "$s" | cut -c4- | sed -e 's/.*-> //'); printf '%s|%s/%s\n' "$code" "$top" "$f" >> "$status_dump"; done; fi
+        fi
+
+        if [ ! -s "$status_dump" ]; then
+            [ -n "$tmp_file" ] && rm -f -- "$tmp_file" 2>/dev/null || true; [ -n "$status_dump" ] && rm -f -- "$status_dump" 2>/dev/null || true; [ -n "$out_filtered" ] && rm -f -- "$out_filtered" 2>/dev/null || true
+            printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files to filter" }\n' "$eval_cmd"
+            exit 0
+        fi
+
+        res=$(python3 - "$tmp_file" "$status_dump" "$HOME" "$PWD" "$out_filtered" << 'PYEOF'
+import os, sys
+tmp_file = sys.argv[1]
+status_file = sys.argv[2]
+home = sys.argv[3]
+pwd = sys.argv[4]
+out_file = sys.argv[5]
+try:
+    with open(tmp_file, 'r', encoding='utf-8', errors='replace') as f:
+        lines = [l.rstrip('\r\n') for l in f]
+except:
+    sys.exit(0)
+try:
+    with open(status_file, 'r', encoding='utf-8', errors='replace') as f:
+        status_raw = [l.rstrip('\r\n') for l in f if l.strip()]
+except:
+    sys.exit(0)
+
+def expand_path(p, home, pwd):
+    if p.startswith("~/"): return home + p[1:]
+    if p == "~": return home
+    if p.startswith("/"): return p
+    if p in (".", "./"): return pwd
+    if p.startswith("./"): return pwd + "/" + p[2:]
+    return pwd + "/" + p
+
+def norm(p):
+    try: return os.path.realpath(p)
+    except: return os.path.normpath(p)
+
+# Collect indent-0 "- /root/" lines as tree roots
+roots = []
+for line in lines:
+    exp = line.replace("\t", "    ")
+    indent = len(exp) - len(exp.lstrip(" "))
+    if indent == 0:
+        s = exp.lstrip()
+        if s.startswith("- "):
+            clean = s[2:].rstrip("/").strip()
+            full = expand_path(clean, home, pwd)
+            roots.append(norm(full))
+
+# Collect git leaf files as normalized absolute paths
+git_files = set()
+for entry in status_raw:
+    if "|" not in entry:
+        continue
+    _, path = entry.split("|", 1)
+    git_files.add(norm(path))
+
+# Group git files by root
+git_files_per_root = {root: [] for root in roots}
+for gf in git_files:
+    matched = None
+    for root in roots:
+        if gf == root or gf.startswith(root.rstrip("/") + "/"):
+            matched = root
+            break
+    if matched is None:
+        matched = roots[0] if roots else None
+    if matched is not None:
+        git_files_per_root[matched].append(gf)
+
+def build_tree(file_list, root):
+    """
+    Build nested dict from a list of absolute paths under root.
+    Leaf files -> empty dict {}
+    Intermediate dirs -> non-empty dict {children}
+    """
+    root_node = {}
+    root_stripped = root.rstrip("/")
+    for f in sorted(file_list):
+        rel = f[len(root_stripped)+1:] if f.startswith(root_stripped + "/") else os.path.basename(f)
+        parts = [p for p in rel.split("/") if p]
+        cur = root_node
+        for part in parts:
+            if part not in cur:
+                cur[part] = {}
+            cur = cur[part]
+    return root_node
+
+def emit_tree(node, indent):
+    """
+    Emit lines. Dirs (non-empty nodes) get '+ dir/' (collapsed).
+    Leaf files (empty nodes) get '- file'.
+    """
+    dirs  = sorted(k for k, v in node.items() if v)
+    files = sorted(k for k, v in node.items() if not v)
+    for d in dirs:
+        out_lines.append(f"{indent}+ {d}/")
+        emit_tree(node[d], indent + "  ")
+    for f in files:
+        out_lines.append(f"{indent}- {f}")
+
+out_lines = []
+for root in roots:
+    out_lines.append(f"- {root}/")
+    file_list = git_files_per_root.get(root, [])
+    if not file_list:
+        continue
+    root_node = build_tree(file_list, root)
+    emit_tree(root_node, "  ")
+
+with open(out_file, 'w', encoding='utf-8') as out:
+    for l in out_lines:
+        out.write(l + "\n")
+print(out_file)
+PYEOF
+)
+        filtered_file=$(printf '%s\n' "$res" | tail -n 1)
+        if [ -z "$filtered_file" ] || [ ! -f "$filtered_file" ]; then
+            filtered_file="$out_filtered"
+        fi
+        if [ ! -s "$filtered_file" ]; then
+            [ -n "$tmp_file" ] && rm -f -- "$tmp_file" 2>/dev/null || true; [ -n "$status_dump" ] && rm -f -- "$status_dump" 2>/dev/null || true; [ -n "$out_filtered" ] && rm -f -- "$out_filtered" 2>/dev/null || true
+            printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files to filter" }\n' "$eval_cmd"
+            exit 0
+        fi
+        printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f "%s" "%s" "%s" } }\n' "$eval_cmd" "$filtered_file" "$tmp_file" "$status_dump" "$out_filtered"
+        # refresh gutter if overlay is on (new buffer content)
+        if [ "$kak_opt_kiki_tree_git_overlay" = "true" ]; then
+            printf '%s %%{ kiki-tree-git-overlay-refresh }\n' "$eval_cmd"
         fi
     }}
 

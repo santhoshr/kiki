@@ -32,58 +32,94 @@ define-command -override -hidden -params 2 \
     kiki-inline-replace-do %{ evaluate-commands %sh{
         cmd="$1"
         tmp_buf="$2"
-        cur_line="$kak_cursor_line"
-
-        res=$(awk -v cur="$kak_cursor_line" -v pfx="${kak_opt_kiki_prefix:-\$ }" '
-        BEGIN { total = 0 }
-        { total++; lines[total] = $0 }
-        END {
-            start_line = cur + 1
-            end_line = start_line - 1
-            for (i = start_line; i <= total; i++) {
-                if (substr(lines[i], 1, length(pfx)) == pfx || substr(lines[i], 1, 2) == "$ " || substr(lines[i], 1, 1) == ">") break
-                end_line = i
-            }
-            # If there are empty lines before the next command / section, keep the last empty line as separator
-            if (end_line < total && end_line >= start_line && lines[end_line] ~ /^[ \t]*$/) {
-                end_line--
-            }
-            print start_line "|" end_line
-        }' "$tmp_buf")
-
-        rm -f "$tmp_buf"
-
-        start_line=$(printf '%s\n' "$res" | cut -d'|' -f1)
-        end_line=$(printf '%s\n' "$res" | cut -d'|' -f2)
-
-        tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-inline.XXXXXXXX)
-        ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
-
+        cur_line="${kak_cursor_line:-1}"
+        pfx="${kak_opt_kiki_prefix:-\$ }"
         eval_cmd="evaluate-commands"
         [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
 
-        if [ "$start_line" -le "$end_line" ]; then
-            if [ -s "$tmp_out" ]; then
-                out_lines=$(awk 'END {print NR}' "$tmp_out")
-                [ "$out_lines" -lt 1 ] 2>/dev/null && out_lines=1
-                insert_end=$(( start_line + out_lines - 1 ))
-                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{|cat "%s"<ret>}; select %s.1,%s.99999999; try %%{ ansi-render-selection }; select %s.1,%s.1 }\n' \
-                    "$eval_cmd" "$start_line" "$end_line" "$tmp_out" "$start_line" "$insert_end" "$cur_line" "$cur_line"
-            else
-                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{d}; select %s.1,%s.1 }\n' "$eval_cmd" "$start_line" "$end_line" "$cur_line" "$cur_line"
-            fi
-        else
-            if [ -s "$tmp_out" ]; then
-                out_lines=$(awk 'END {print NR}' "$tmp_out")
-                [ "$out_lines" -lt 1 ] 2>/dev/null && out_lines=1
-                insert_start=$(( cur_line + 1 ))
-                insert_end=$(( cur_line + out_lines ))
-                printf '%s %%{ select %s.1,%s.99999999; execute-keys %%{o<esc>|cat "%s"<ret>}; select %s.1,%s.99999999; try %%{ ansi-render-selection }; select %s.1,%s.1 }\n' \
-                    "$eval_cmd" "$cur_line" "$cur_line" "$tmp_out" "$insert_start" "$insert_end" "$cur_line" "$cur_line"
-            fi
+        tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-inline-out.XXXXXXXX)
+        ( eval "$cmd" ) > "$tmp_out" 2>&1 < /dev/null
+
+        out_updated=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-inline-buf.XXXXXXXX)
+
+        res=$(python3 - "$tmp_buf" "$cur_line" "$pfx" "$tmp_out" "$out_updated" << 'PYEOF'
+import sys
+
+buf_file = sys.argv[1]
+try: cur_line = int(sys.argv[2])
+except: cur_line = 1
+pfx = sys.argv[3]
+out_file = sys.argv[4]
+new_buf_file = sys.argv[5]
+
+try:
+    with open(buf_file, 'r', encoding='utf-8', errors='replace') as f:
+        lines = [l.rstrip('\r\n') for l in f]
+except:
+    sys.exit(1)
+
+try:
+    with open(out_file, 'r', encoding='utf-8', errors='replace') as f:
+        cmd_output = [l.rstrip('\r\n') for l in f]
+    # Strip trailing empty lines from command output to keep formatting neat
+    while cmd_output and cmd_output[-1] == '':
+        cmd_output.pop()
+except:
+    cmd_output = []
+
+cur_idx = cur_line - 1
+if cur_idx < 0 or cur_idx >= len(lines):
+    sys.exit(1)
+
+# Find existing output of this command line.
+# Output lines continue until hitting any structural boundary:
+# - Blank line
+# - Next command line (starts with pfx or '$ ' or '>')
+# - Comment line (starts with '#')
+# - Tree node line (starts with '+ ' or '- ')
+start_idx = cur_idx + 1
+end_idx = start_idx
+while end_idx < len(lines):
+    line = lines[end_idx]
+    s = line.lstrip()
+    if not s or s.startswith(pfx) or s.startswith('$ ') or s.startswith('>') or s.startswith('#') or s.startswith('+ ') or s.startswith('- '):
+        break
+    end_idx += 1
+
+new_lines = lines[:start_idx] + cmd_output + lines[end_idx:]
+
+with open(new_buf_file, 'w', encoding='utf-8') as f:
+    for l in new_lines:
+        f.write(l + '\n')
+
+insert_start = start_idx + 1
+insert_end = start_idx + len(cmd_output)
+print(f"{new_buf_file}|{insert_start}|{insert_end}|{len(cmd_output)}")
+PYEOF
+)
+        rc=$?
+        [ -n "$tmp_buf" ] && rm -f -- "$tmp_buf" 2>/dev/null || true
+        [ -n "$tmp_out" ] && rm -f -- "$tmp_out" 2>/dev/null || true
+
+        if [ $rc -ne 0 ] || [ -z "$res" ]; then
+            [ -n "$out_updated" ] && rm -f -- "$out_updated" 2>/dev/null || true
+            exit 0
         fi
 
-        printf 'nop %%sh{ rm -f -- "%s" 2>/dev/null }\n' "$tmp_out"
+        buf_updated=$(printf '%s\n' "$res" | cut -d'|' -f1)
+        ins_start=$(printf '%s\n' "$res" | cut -d'|' -f2)
+        ins_end=$(printf '%s\n' "$res" | cut -d'|' -f3)
+        out_count=$(printf '%s\n' "$res" | cut -d'|' -f4)
+
+        if [ -n "$buf_updated" ] && [ -f "$buf_updated" ]; then
+            if [ "$out_count" -gt 0 ] 2>/dev/null; then
+                printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select %s.1,%s.99999999; try %%{ ansi-render-selection }; select %s.1,%s.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' \
+                    "$eval_cmd" "$buf_updated" "$ins_start" "$ins_end" "$cur_line" "$cur_line" "$buf_updated"
+            else
+                printf '%s %%{ execute-keys %%{<percent>|cat "%s"<ret>}; select %s.1,%s.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' \
+                    "$eval_cmd" "$buf_updated" "$cur_line" "$cur_line" "$buf_updated"
+            fi
+        fi
     }}
 
 # Execute command and return in scratch buffer

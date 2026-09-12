@@ -21,6 +21,7 @@ g/s: Status
 c: Commit...
 l: Log
 d: Diff
+o/O: Filtered tree / File tree
 q: Quit popup}
 
 declare-option -hidden str kiki_git_popup_menu_modified %{<tab>/<s-tab>: Next/Prev file
@@ -35,6 +36,7 @@ l: Log
 r: Refresh
 p: Preview
 e: Edit
+o/O: Filtered tree / File tree
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_staged %{<tab>/<s-tab>: Next/Prev file
@@ -49,6 +51,7 @@ l: Log
 r: Refresh
 p: Preview
 e: Edit
+o/O: Filtered tree / File tree
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_staged_modified %{<tab>/<s-tab>: Next/Prev file
@@ -64,6 +67,7 @@ l: Log
 r: Refresh
 p: Preview
 e: Edit
+o/O: Filtered tree / File tree
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_untracked %{<tab>/<s-tab>: Next/Prev file
@@ -78,6 +82,7 @@ l: Log
 r: Refresh
 p: Preview
 e: Edit
+o/O: Filtered tree / File tree
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_git %{<tab>/<s-tab>: Next/Prev file
@@ -88,6 +93,7 @@ d: Diff
 r: Refresh
 p: Preview
 e: Edit
+o/O: Filtered tree / File tree
 q: Quit buffer}
 
 declare-option -hidden str kiki_git_popup_menu_commit %{<tab>/<s-tab>: Next/Prev file
@@ -96,6 +102,7 @@ c: Commit
 a: Commit all (-a)
 A: Amend
 N: Amend no-edit
+o/O: Filtered tree / File tree
 q: Quit}
 
 # Popup display helper: opens mode and displays info box with custom title and key options
@@ -1499,6 +1506,154 @@ define-command -override -docstring "kiki-git-edit: edit target file in Kakoune"
         kiki-edit-do %opt{kiki_git_target}
     }
 
+# Open git-filtered tree in new tree/kiki buffer (same filtered view as `f` but always in a fresh buffer)
+define-command -override -docstring "kiki-git-open-filtered-tree: open git-filtered file tree" \
+    kiki-git-open-filtered-tree %{ evaluate-commands %sh{
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        # Resolve repo: prioritize stored repo, then target's repo, then PWD/buffile with kiki-buffer priority
+        repo="$kak_opt_kiki_tree_git_repo"
+        target="$kak_opt_kiki_git_target"
+        if [ -n "$target" ] && [ -e "$target" ]; then
+            top=$(git -C "$(dirname "$target")" rev-parse --show-toplevel 2>/dev/null)
+            [ -n "$top" ] && repo="$top"
+        fi
+        if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                top=$(git rev-parse --show-toplevel 2>/dev/null)
+                [ -n "$top" ] && repo="$top"
+                if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+                    [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && repo="$top"
+                fi
+            else
+                [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && repo="$top"
+                if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+                    top=$(git rev-parse --show-toplevel 2>/dev/null)
+                    [ -n "$top" ] && repo="$top"
+                fi
+            fi
+        fi
+        if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+            printf '%s %%{ echo -markup "{yellow}[kiki-git]{default} not a git repository" }\n' "$eval_cmd"
+            exit 0
+        fi
+        repo=$(cd "$repo" 2>/dev/null && pwd || printf '%s' "$repo")
+        timestamp=$(date +%H%M%S)
+        tmp_out=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-git-tree.XXXXXXXX)
+        if ! python3 - "$repo" "$tmp_out" << 'PYEOF'
+import os, sys, subprocess
+repo = sys.argv[1]
+out = sys.argv[2]
+try:
+    top = subprocess.check_output(['git', '-C', repo, 'rev-parse', '--show-toplevel'], stderr=subprocess.DEVNULL).decode().strip()
+except:
+    sys.exit(2)
+try:
+    git_out = subprocess.check_output(['git', '-C', top, 'status', '--porcelain'], stderr=subprocess.DEVNULL).decode()
+except:
+    sys.exit(2)
+def norm(p):
+    try: return os.path.realpath(p)
+    except: return os.path.normpath(p)
+norm_top = norm(top)
+files = []
+for s in git_out.splitlines():
+    if len(s) < 4: continue
+    f = s[3:].strip()
+    if ' -> ' in f: f = f.split(' -> ')[-1]
+    abs_f = norm(os.path.join(top, f))
+    if abs_f == norm_top or abs_f.startswith(norm_top.rstrip('/') + '/'):
+        files.append(abs_f)
+if not files:
+    sys.exit(3)
+def build_tree(file_list, root):
+    root_node = {}
+    rs = root.rstrip('/')
+    for f in sorted(file_list):
+        rel = f[len(rs)+1:] if f.startswith(rs + '/') else os.path.basename(f)
+        parts = [p for p in rel.split('/') if p]
+        cur = root_node
+        for part in parts:
+            if part not in cur:
+                cur[part] = {}
+            cur = cur[part]
+    return root_node
+def emit_tree(node, indent, out_list):
+    dirs = sorted(k for k, v in node.items() if v)
+    files = sorted(k for k, v in node.items() if not v)
+    for d in dirs:
+        out_list.append(f"{indent}+ {d}/")
+        emit_tree(node[d], indent + "  ", out_list)
+    for f in files:
+        out_list.append(f"{indent}- {f}")
+filtered = [f"- {top.rstrip('/')}/"]
+root_node = build_tree(files, norm_top)
+emit_tree(root_node, "  ", filtered)
+with open(out, 'w', encoding='utf-8') as fh:
+    for l in filtered:
+        fh.write(l + "\n")
+PYEOF
+        then
+            rc=$?
+            rm -f -- "$tmp_out" 2>/dev/null || true
+            if [ $rc -eq 3 ]; then
+                printf '%s %%{ echo -markup "{yellow}kiki-tree: no git files in %%{%s}" }\n' "$eval_cmd" "$repo"
+            else
+                printf '%s %%{ echo -markup "{yellow}kiki-tree: not a git repository" }\n' "$eval_cmd"
+            fi
+            exit 0
+        fi
+        bufname="*kiki-file-tree-git-${timestamp}*"
+        # Escape single quotes for kakoune string
+        printf '%s %%{ edit -scratch "%s"; set-option buffer kiki_buffer_type kiki-buffer; set-option buffer filetype kiki; kiki-set-modeline kiki-buffer; execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$bufname" "$tmp_out" "$tmp_out"
+    }}
+
+# Open file tree for git repo in new buffer (same as `,o` / kiki-file-tree but always in a fresh buffer)
+define-command -override -docstring "kiki-git-open-tree: open file tree for git repo (same as ,o)" \
+    kiki-git-open-tree %{ evaluate-commands %sh{
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        repo="$kak_opt_kiki_tree_git_repo"
+        target="$kak_opt_kiki_git_target"
+        if [ -n "$target" ]; then
+            if [ -d "$target" ]; then
+                repo="$target"
+            elif [ -e "$target" ]; then
+                repo=$(dirname "$target")
+            fi
+        fi
+        if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+            if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ]; then
+                top=$(git rev-parse --show-toplevel 2>/dev/null)
+                [ -n "$top" ] && repo="$top"
+                [ -z "$repo" ] && [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && repo="$top"
+            else
+                [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ] && top=$(git -C "$(dirname "$kak_buffile")" rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && repo="$top"
+                [ -z "$repo" ] && top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && repo="$top"
+            fi
+        fi
+        [ -z "$repo" ] && repo="$PWD"
+        repo=$(cd "$repo" 2>/dev/null && pwd || printf '%s' "$repo")
+        if [ ! -d "$repo" ]; then
+            repo="$PWD"
+        fi
+        timestamp=$(date +%H%M%S)
+        bufname="*kiki-file-tree-${timestamp}*"
+        tmp_content=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree.XXXXXXXX)
+        printf '%s\n' "- ${repo%/}/" > "$tmp_content"
+        show_hidden="$kak_opt_kiki_tree_show_hidden"
+        if [ "$show_hidden" = "true" ]; then
+            find "$repo" -mindepth 1 -maxdepth 1 ! -name "." ! -name ".." 2>/dev/null | sort -f | while IFS= read -r e; do [ -d "$e" ] && printf '  + %s/\n' "${e##*/}" >> "$tmp_content"; done
+            find "$repo" -mindepth 1 -maxdepth 1 ! -name "." ! -name ".." 2>/dev/null | sort -f | while IFS= read -r e; do [ ! -d "$e" ] && printf '  - %s\n' "${e##*/}" >> "$tmp_content"; done
+        else
+            find "$repo" -mindepth 1 -maxdepth 1 ! -name ".*" 2>/dev/null | sort -f | while IFS= read -r e; do [ -d "$e" ] && printf '  + %s/\n' "${e##*/}" >> "$tmp_content"; done
+            find "$repo" -mindepth 1 -maxdepth 1 ! -name ".*" 2>/dev/null | sort -f | while IFS= read -r e; do [ ! -d "$e" ] && printf '  - %s\n' "${e##*/}" >> "$tmp_content"; done
+        fi
+        printf '%s %%{ edit -scratch "%s"; set-option buffer kiki_buffer_type kiki-buffer; set-option buffer filetype kiki; kiki-set-modeline kiki-buffer; execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$bufname" "$tmp_content" "$tmp_content"
+    }}
+
 # Mappings for user mode untracked (Untracked / New File Popup)
 map global untracked <tab> ':kiki-git-rotate-file 1<ret>' -docstring 'Next file'
 map global untracked <s-tab> ':kiki-git-rotate-file -1<ret>' -docstring 'Prev file'
@@ -1515,6 +1670,8 @@ map global untracked l ':kiki-git-log<ret>' -docstring 'Log'
 map global untracked r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global untracked p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global untracked e ':kiki-git-edit<ret>' -docstring 'Edit'
+map global untracked o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global untracked O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global untracked q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode modified (Modified / Conflict File Popup)
@@ -1533,6 +1690,8 @@ map global modified l ':kiki-git-log<ret>' -docstring 'Log'
 map global modified r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global modified p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global modified e ':kiki-git-edit<ret>' -docstring 'Edit'
+map global modified o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global modified O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode staged (Staged File Popup)
@@ -1550,6 +1709,8 @@ map global staged l ':kiki-git-log<ret>' -docstring 'Log'
 map global staged r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global staged p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global staged e ':kiki-git-edit<ret>' -docstring 'Edit'
+map global staged o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global staged O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global staged q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode staged-modified (Staged + Modified File Popup)
@@ -1569,6 +1730,8 @@ map global staged-modified l ':kiki-git-log<ret>' -docstring 'Log'
 map global staged-modified r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global staged-modified p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global staged-modified e ':kiki-git-edit<ret>' -docstring 'Edit'
+map global staged-modified o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global staged-modified O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global staged-modified q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode git (Compact Common Git Actions Popup / Clean tree)
@@ -1582,6 +1745,8 @@ map global git d ':kiki-git-diff-all<ret>' -docstring 'Diff'
 map global git r ':kiki-git-refresh<ret>' -docstring 'Refresh'
 map global git p ':kiki-git-preview<ret>' -docstring 'Preview'
 map global git e ':kiki-git-edit<ret>' -docstring 'Edit'
+map global git o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global git O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global git q ':kiki-smart-close<ret>' -docstring 'Quit buffer'
 
 # Mappings for user mode tree-git (File tree git common popup)
@@ -1592,6 +1757,8 @@ map global tree-git s ':kiki-git-status<ret>' -docstring 'Status'
 map global tree-git c ':kiki-show-git-commit-popup<ret>' -docstring 'Commit...'
 map global tree-git l ':kiki-git-log<ret>' -docstring 'Log'
 map global tree-git d ':kiki-git-diff-all<ret>' -docstring 'Diff'
+map global tree-git o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global tree-git O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global tree-git q ':nop<ret>' -docstring 'Quit popup'
 
 # Mappings for user mode commit (Commit actions popup)
@@ -1602,4 +1769,6 @@ map global commit c ':kiki-git-commit<ret>' -docstring 'Commit'
 map global commit a ':kiki-git-commit-all<ret>' -docstring 'Commit all (-a)'
 map global commit A ':kiki-git-commit-amend<ret>' -docstring 'Amend'
 map global commit N ':kiki-git-commit-amend-no-edit<ret>' -docstring 'Amend no-edit'
+map global commit o ':kiki-git-open-filtered-tree<ret>' -docstring 'Filtered git tree'
+map global commit O ':kiki-git-open-tree<ret>' -docstring 'File tree'
 map global commit q ':nop<ret>' -docstring 'Quit'

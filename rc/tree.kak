@@ -12,7 +12,7 @@ hook -group kiki global BufCreate \*kiki-file-tree\* %{
     set-option buffer filetype kiki
     map buffer normal v ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
     map buffer normal f ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
-    map buffer normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+    map buffer normal G ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
 }
 
 hook -group kiki global BufOpenFile .*\.kikitree$ %{
@@ -29,7 +29,7 @@ hook -group kiki global WinSetOption filetype=kiki-tree %{
     kiki-set-modeline kiki-buffer
     map window normal v ':kiki-tree-git-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag)'
     map window normal f ':kiki-tree-filter-git<ret>' -docstring 'Filter to git-related files (expand subfolders)'
-    map window normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+    map window normal G ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
 }
 
 hook -group kiki-tree-overlay global WinSetOption filetype=kiki %{
@@ -38,7 +38,7 @@ hook -group kiki-tree-overlay global WinSetOption filetype=kiki %{
             \*kiki-file-tree\*)
                 printf 'map window normal v :kiki-tree-git-overlay<ret> -docstring "Toggle git status overlay (highlight + flag)"\n'
                 printf 'map window normal f :kiki-tree-filter-git<ret> -docstring "Filter to git-related files (expand subfolders)"\n'
-                printf 'map window normal g :kiki-smart-git-popup<ret> -docstring "Open git action popup on file or directory"\n'
+                printf 'map window normal G :kiki-smart-git-popup<ret> -docstring "Open git action popup on file or directory"\n'
                 ;;
         esac
     }

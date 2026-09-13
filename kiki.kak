@@ -44,10 +44,9 @@ map global kiki f ':kiki-fifo<ret>' -docstring 'Execute and pipe output to fifo.
 map global kiki b ':kiki-background<ret>' -docstring 'Execute in the background.'
 map global kiki '!' ':kiki-shell<ret>' -docstring 'Execute in terminal shell.'
 map global kiki g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory.'
-map global kiki ` ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory.'
 
 # Normal mode global shortcuts (aliases, ,g is primary)
-map global normal <a-g> ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+map global normal <a-g> 'G' -docstring 'extend to line (native G alias)'
 map global normal ` ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
 
 # File system & URL navigation

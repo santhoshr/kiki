@@ -29,13 +29,13 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
     map buffer normal v ':kiki-smart-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag) in tree'
     map buffer normal f ':kiki-smart-filter<ret>' -docstring 'Filter tree to git-related files'
-    map buffer normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+    map buffer normal G ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
     map buffer normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map buffer normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map buffer insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map buffer normal <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
     map buffer insert <a-C> '<esc>:kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
-    map buffer normal <a-g> ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+    map buffer normal <a-g> 'G' -docstring 'extend to line (native G alias)'
     map buffer normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
@@ -63,13 +63,13 @@ hook -group kiki global WinSetOption filetype=kiki %{
     map window normal . ':kiki-smart-dot<ret>' -docstring 'Toggle hidden files'
     map window normal v ':kiki-smart-overlay<ret>' -docstring 'Toggle git status overlay (highlight + flag) in tree'
     map window normal f ':kiki-smart-filter<ret>' -docstring 'Filter tree to git-related files'
-    map window normal g ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+    map window normal G ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
     map window normal D ':kiki-smart-drop-to-shell<ret>' -docstring 'Suspend Kakoune and drop to shell in directory under cursor'
     map window normal <a-c> ':kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map window insert <a-c> '<esc>:kiki-smart-new-command<ret>' -docstring 'Insert kiki prefix into current or next empty line'
     map window normal <a-C> ':kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
     map window insert <a-C> '<esc>:kiki-smart-new-command-above<ret>' -docstring 'Insert kiki prefix into current or previous empty line'
-    map window normal <a-g> ':kiki-smart-git-popup<ret>' -docstring 'Open git action popup on file or directory'
+    map window normal <a-g> 'G' -docstring 'extend to line (native G alias)'
     map window normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 

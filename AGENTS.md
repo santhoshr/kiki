@@ -78,7 +78,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 ### E. Interactive Multi-Root File Tree (`rc/tree.kak`)
 - **Fluid & Editable:** Tree buffer `*kiki-file-tree*` is a fully editable scratch buffer with `[kiki:tree]` tag.
 - **Root & Subdirectory Collapsing:** Root directories (`- /path/`) and nested folders (`  + subdir/`) can be collapsed (`+ `) and re-expanded (`- `) with `<ret>` (or `<c-o>`).
-- **Git Action Popup in Tree:** Pressing `,g` (aliases: `` ` ``, `<a-g>`) on any file or directory in the file tree opens the Git action popup (`tree-git` on directories, or file status popup on files).
+- **Git Action Popup in Tree:** Pressing `G` (aliases: `,g`, `` ` ``) on any file or directory in the file tree opens the Git action popup (`tree-git` on directories, or file status popup on files).
 - **Directory Trap:** A `RuntimeError` hook intercepts Kakoune's native `:edit <dir>` (*"is a directory"*) error and immediately launches `kiki-file-tree` on that directory.
 - **Step-Into & Move-to-Parent:** Pressing `<tab>` promotes any subfolder into the tree's root header (`- /subfolder/path/`) and loads its contents. Pressing `<c-l>` moves the tree up to its parent folder (`- /parent/path/`).
 - **Keybindings in Kiki Buffers:**
@@ -94,7 +94,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
   - `-`: Narrow unselected subtrees/siblings.
   - `v`: Toggle git status overlay (1: line highlight `yellow`/`green`/`magenta`/`cyan` + 3: flag on `+/-` marker) anywhere in tree.
   - `f`: Filter tree to git-modified files only (collapsed intermediate dirs, leaf files expanded).
-  - `g` / `,g` / `` ` `` / `<a-g>`: Open Git action popup for any file or directory under cursor.
+  - `G` / `,g` / `` ` ``: Open Git action popup for any file or directory under cursor (`<a-g>` extends to line, preserving native `G`).
   - `r`: Refresh directory node or Git status block in-place.
   - `.`: Toggle hidden dotfiles.
   - `<a-c>`: Insert `kiki_prefix` into current line (if empty) or next available empty line below, and enter insert mode.
@@ -127,8 +127,7 @@ Instead of duplicating argument/selection parsing across commands, Kiki uses two
 | `f` | `kiki-fifo` | Asynchronously stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell in `$PWD` |
-| `g` | `kiki-smart-git-popup` | Open git action popup on file/directory (aliases: `` ` ``, `<a-g>`) |
-| `` ` `` | `kiki-smart-git-popup` | Open git action popup on file/directory (alias for `g`) |
+| `g` | `kiki-smart-git-popup` | Open git action popup on file/directory |
 | `u` | `kiki-open-url` | Open URL from line or buffer in web browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor/selection |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topic files) |

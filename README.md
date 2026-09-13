@@ -195,7 +195,7 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 
 ### File Tree Keybindings:
 - `<ret>` / `<c-o>`: Toggle folder expand (`+ `) / collapse (`- `), or open file directly into an editor buffer.
-- `,g` / `` ` `` / `<a-g>`: Open **Git Action Popup** for any file or directory under cursor in the file tree (or in any Kiki buffer).
+- `G` / `,g` / `` ` ``: Open **Git Action Popup** for any file or directory under cursor in the file tree (or in any Kiki buffer).
 - `<tab>`: **Step Into** — promotes the selected subfolder to become the root directory of the tree view.
 - `<c-l>`: **Move to Parent** — moves the tree view up to the parent directory.
 - `*`: **Recursive Expand** — recursively unfolds all subdirectories under cursor.
@@ -207,8 +207,8 @@ Press `,o` or run `:kiki-file-tree [<path>]` to open a fluid, collapsible file t
 - `D`: Drop into an interactive shell in the selected folder.
 - `q`: Close the file tree buffer.
 
-#### Git Repository Action Popup in File Tree (`,g` / `` ` `` / `<a-g>`):
-Pressing `,g` (aliases `` ` ``, `<a-g>`) on any directory in `*kiki-file-tree*` opens the `tree-git` popup:
+#### Git Repository Action Popup in File Tree (`G` / `,g` / `` ` ``):
+Pressing `G` (aliases `,g`, `` ` ``) on any directory in `*kiki-file-tree*` opens the `tree-git` popup:
 - `<tab>`/`<s-tab>`: **Next/Prev file** — rotate to next/prev changed file
 - `g`/`s`: **Status** — opens `git status` in a FIFO buffer for that repository.
 - `c`: **Commit...** — opens the Git commit menu (`commit`).
@@ -216,7 +216,7 @@ Pressing `,g` (aliases `` ` ``, `<a-g>`) on any directory in `*kiki-file-tree*` 
 - `d`: **Diff** — runs `git diff` in an interactive shell terminal for that repo.
 - `q`: **Quit popup** — closes the popup without changes.
 
-Pressing `,g` (aliases `` ` ``, `<a-g>`) on any file (in the file tree or inside normal editor buffers) opens the contextual Git action popup (`untracked`, `modified`, `staged`, or `git`) scoped to that file.
+Pressing `G` (aliases `,g`, `` ` ``) on any file (in the file tree or inside normal editor buffers) opens the contextual Git action popup (`untracked`, `modified`, `staged`, or `git`) scoped to that file.
 
 > **Tip:** You can also run `:edit /path/to/dir/` (or `:e .`) as usual. Kiki automatically catches Kakoune's directory error and opens the file tree for that folder.
 
@@ -338,7 +338,8 @@ Inside any Kiki-managed buffer (`*kiki-scratch*`, `*kiki-fifo-*`, `*kiki-file-tr
 | `-` | Narrows/hides sibling folders in tree |
 | `r` | Refreshes directory node or Git status block in-place |
 | `.` | Toggles hidden dotfiles in tree |
-| `,g` / `` ` `` / `<a-g>` | Opens Git action popup for any file or directory (in file tree or buffers) |
+| `G` / `,g` / `` ` `` | Opens Git action popup for any file or directory (in file tree or buffers) |
+| `<a-g>` | Extends selection to line (Kakoune native `G` alias) |
 | `q` | Closes buffer |
 
 ---
@@ -416,8 +417,7 @@ set-option global kiki_tree_show_hidden false
 | `f` | `kiki-fifo` | Stream command output to FIFO buffer |
 | `b` | `kiki-background`| Execute command detached in background with PID |
 | `!` | `kiki-shell` | Run command in interactive terminal shell |
-| `g` | `kiki-smart-git-popup` | Open git action popup on file/directory (aliases `` ` ``, `<a-g>`) |
-| `` ` `` | `kiki-smart-git-popup` | Open git action popup on file/directory (alias for `g`) |
+| `g` | `kiki-smart-git-popup` | Open git action popup on file/directory |
 | `u` | `kiki-open-url` | Open URL from line or buffer in browser |
 | `l` | `kiki-ls` | Run `ls -alh` on path under cursor |
 | `e` | `kiki-edit` | Open file at path (supports `file:line:col` and topics) |

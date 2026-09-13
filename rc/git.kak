@@ -1606,7 +1606,7 @@ PYEOF
         fi
         bufname="*kiki-file-tree-git-${timestamp}*"
         # Escape single quotes for kakoune string
-        printf '%s %%{ edit -scratch "%s"; set-option buffer kiki_buffer_type kiki-buffer; set-option buffer filetype kiki; kiki-set-modeline kiki-buffer; execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$bufname" "$tmp_out" "$tmp_out"
+        printf '%s %%{ edit -scratch "%s"; set-option buffer kiki_buffer_type kiki-buffer; set-option buffer filetype kiki; set-option buffer kiki_tree_git_repo %%{%s}; kiki-set-modeline; execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$bufname" "$repo" "$tmp_out" "$tmp_out"
     }}
 
 # Open file tree for git repo in new buffer (same as `,o` / kiki-file-tree but always in a fresh buffer)
@@ -1651,7 +1651,7 @@ define-command -override -docstring "kiki-git-open-tree: open file tree for git 
             find "$repo" -mindepth 1 -maxdepth 1 ! -name ".*" 2>/dev/null | sort -f | while IFS= read -r e; do [ -d "$e" ] && printf '  + %s/\n' "${e##*/}" >> "$tmp_content"; done
             find "$repo" -mindepth 1 -maxdepth 1 ! -name ".*" 2>/dev/null | sort -f | while IFS= read -r e; do [ ! -d "$e" ] && printf '  - %s\n' "${e##*/}" >> "$tmp_content"; done
         fi
-        printf '%s %%{ edit -scratch "%s"; set-option buffer kiki_buffer_type kiki-buffer; set-option buffer filetype kiki; kiki-set-modeline kiki-buffer; execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$bufname" "$tmp_content" "$tmp_content"
+        printf '%s %%{ edit -scratch "%s"; set-option buffer kiki_buffer_type kiki-buffer; set-option buffer filetype kiki; set-option buffer kiki_tree_git_repo %%{%s}; kiki-set-modeline; execute-keys %%{<percent>|cat "%s"<ret>}; select 1.1,1.1; nop %%sh{ rm -f -- "%s" 2>/dev/null } }\n' "$eval_cmd" "$bufname" "$repo" "$tmp_content" "$tmp_content"
     }}
 
 # Mappings for user mode untracked (Untracked / New File Popup)

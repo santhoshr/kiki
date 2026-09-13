@@ -39,6 +39,14 @@ hook -group kiki global BufSetOption filetype=kiki %{
     map buffer normal q ':kiki-smart-close<ret>' -docstring 'Close kiki buffer'
 }
 
+hook -group kiki global WinDisplay .* %{
+    evaluate-commands %sh{
+        if [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ] || [ "$kak_opt_filetype" = "kiki" ]; then
+            printf "kiki-set-modeline kiki-buffer\n"
+        fi
+    }
+}
+
 hook -group kiki global WinSetOption filetype=kiki %{
     kiki-set-modeline kiki-buffer
     map window normal <ret> ':kiki-smart-enter<ret>' -docstring 'Execute command in FIFO, open file/folder, or toggle tree'

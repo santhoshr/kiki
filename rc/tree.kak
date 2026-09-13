@@ -103,7 +103,8 @@ define-command -override -hidden -params 1 \
         printf 'edit -scratch %s\n' "$bufname"
         printf 'set-option buffer kiki_buffer_type kiki-buffer\n'
         printf 'set-option buffer filetype kiki\n'
-        printf 'kiki-set-modeline kiki-buffer\n'
+        printf 'set-option buffer kiki_tree_git_repo %%{%s}\n' "$target_dir"
+        printf 'kiki-set-modeline\n'
 
         tmp_content=$(mktemp "${TMPDIR:-/tmp}"/kiki-tree.XXXXXXXX)
         target_dir_clean="${target_dir%/}/"
@@ -794,6 +795,8 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", root_idx, root_idx
+            printf "set-option buffer kiki_tree_git_repo %%{%s}\n", full_p
+            printf "try %%{ kiki-set-modeline }\n"
             printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}
@@ -1413,6 +1416,8 @@ define-command -override -hidden -params 1 \
 
             printf "execute-keys %%{<percent>|cat \"%s\"<ret>}\n", out_tmp
             printf "select %s.1,%s.1\n", root_idx, root_idx
+            printf "set-option buffer kiki_tree_git_repo %%{%s}\n", parent_p
+            printf "try %%{ kiki-set-modeline }\n"
             printf "nop %%sh{ rm -f -- \"%s\" \"%s\" 2>/dev/null }\n", tmp_file, out_tmp
         }'
     }}

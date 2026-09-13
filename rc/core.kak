@@ -1,10 +1,55 @@
 # Kiki Core Helpers & Dispatchers
 
 # Modeline tag helper
-define-command -override -hidden -params 1 \
-    kiki-set-modeline %{
-        try %{ set-option window modelinefmt "%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} %{cyan}[kiki:%arg{1}]%{default} {{mode_info}} - %val{client}@[%val{session}]" }
-    }
+define-command -override -hidden -params 0..1 \
+    kiki-set-modeline %{ evaluate-commands %sh{
+        eval_cmd="evaluate-commands"
+        [ -n "$kak_client" ] && eval_cmd="evaluate-commands -client %val{client}"
+
+        target_dir=""
+        if [ -n "$kak_opt_kiki_tree_git_repo" ] && [ -d "$kak_opt_kiki_tree_git_repo" ]; then
+            target_dir="$kak_opt_kiki_tree_git_repo"
+        elif [ "$kak_opt_kiki_buffer_type" = "kiki-buffer" ] || [ "$kak_opt_filetype" = "kiki" ]; then
+            target_dir="$PWD"
+        elif [ -n "$kak_buffile" ] && [ -e "$kak_buffile" ]; then
+            target_dir=$(dirname "$kak_buffile")
+        else
+            target_dir="$PWD"
+        fi
+
+        target_dir=$(cd "$target_dir" 2>/dev/null && pwd -P || printf "%s" "$target_dir")
+        clean_dir="${target_dir%/}"
+
+        if [ -z "$clean_dir" ]; then
+            display_dir="/"
+        else
+            dir_name="${clean_dir##*/}"
+            parent_path="${clean_dir%/*}"
+            if [ -n "$parent_path" ]; then
+                parent_name="${parent_path##*/}"
+                if [ -n "$parent_name" ]; then
+                    display_dir="${parent_name}/${dir_name}"
+                else
+                    display_dir="$dir_name"
+                fi
+            else
+                display_dir="$dir_name"
+            fi
+        fi
+
+        is_git=0
+        if git -C "$target_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            is_git=1
+        fi
+
+        if [ "$is_git" -eq 1 ]; then
+            tag="kiki-git+${display_dir}"
+        else
+            tag="kiki-${display_dir}"
+        fi
+
+        printf "%s %%{ set-option window modelinefmt %%{%s} }\n" "$eval_cmd" "%val{bufname} %val{cursor_line}:%val{cursor_char_column} {{context_info}} {cyan}[$tag]{default} {{mode_info}} - %val{client}@[%val{session}]"
+    }}
 
 # Spawn terminal matching the current active terminal emulator
 define-command -override -hidden -params 1 \

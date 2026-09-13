@@ -25,7 +25,7 @@ define-command -override -hidden -params 1 \
 
         tmp_buf=$(mktemp "${TMPDIR:-/tmp}"/kak-kiki-in-buf.XXXXXXXX)
         printf 'write -sync -force "%s"\n' "$tmp_buf"
-        printf 'kiki-inline-replace-do "%s" "%s"\n' "$cmd" "$tmp_buf"
+        printf 'kiki-inline-replace-do %%{%s} %%{%s}\n' "$cmd" "$tmp_buf"
     }}
 
 define-command -override -hidden -params 2 \

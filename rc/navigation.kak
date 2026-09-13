@@ -67,11 +67,13 @@ define-command -override -hidden -params 1 \
 
         if [ -n "$path" ] && [ -d "$path" ]; then
             printf 'change-directory %%{%s}\n' "$path"
+            printf 'try %%{ kiki-set-modeline }\n'
             printf 'echo "kiki: changed directory to %s"\n' "$path"
             exit 0
         elif [ -n "$path" ] && [ -f "$path" ]; then
             dir=$(dirname "$path")
             printf 'change-directory %%{%s}\n' "$dir"
+            printf 'try %%{ kiki-set-modeline }\n'
             printf 'echo "kiki: changed directory to %s"\n' "$dir"
             exit 0
         fi
@@ -82,6 +84,7 @@ define-command -override -hidden -params 1 \
             dir=$(dirname "$buf_file")
             if [ -d "$dir" ]; then
                 printf 'change-directory %%{%s}\n' "$dir"
+                printf 'try %%{ kiki-set-modeline }\n'
                 printf 'echo "kiki: changed directory to %s"\n' "$dir"
             fi
         fi
